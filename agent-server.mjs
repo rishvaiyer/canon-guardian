@@ -1,6 +1,8 @@
 import 'dotenv/config';
 import { createClient } from '@clickhouse/client';
 import { GoogleGenAI } from '@google/genai';
+import { Client as McpClient } from '@modelcontextprotocol/sdk/client/index.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { createReadStream, existsSync } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { createServer } from 'node:http';
@@ -16,6 +18,18 @@ const reviewBuckets = new Map();
 
 function configured() {
   return Boolean(process.env.GOOGLE_CLOUD_PROJECT && process.env.CLICKHOUSE_HOST && Object.hasOwn(process.env, 'CLICKHOUSE_PASSWORD'));
+}
+
+async function clickHouseMcpHealthy() {
+  const endpoint = process.env.CLICKHOUSE_MCP_URL || 'http://127.0.0.1:8000/mcp';
+  try {
+    const healthUrl = new URL(endpoint);
+    healthUrl.pathname = '/health';
+    const response = await fetch(healthUrl, { signal: AbortSignal.timeout(1500) });
+    return response.ok;
+  } catch {
+    return false;
+  }
 }
 
 function contentType(path) {
@@ -73,6 +87,30 @@ function createEnterpriseClient() {
   });
 }
 
+async function queryThroughClickHouseMcp(query) {
+  const endpoint = process.env.CLICKHOUSE_MCP_URL || 'http://127.0.0.1:8000/mcp';
+  const token = process.env.CLICKHOUSE_MCP_AUTH_TOKEN || 'storyisstraight-internal-mcp';
+  const client = new McpClient({ name: 'story-is-straight', version: '1.0.0' });
+  const transport = new StreamableHTTPClientTransport(new URL(endpoint), { requestInit: { headers: { Authorization: `Bearer ${token}` } } });
+  try {
+    await client.connect(transport);
+    const result = await client.callTool({ name: 'run_query', arguments: { query } });
+    const text = result?.content?.find((item) => item.type === 'text')?.text;
+    if (!text) throw new Error('ClickHouse MCP returned no query result.');
+    const parsed = JSON.parse(text);
+    return Array.isArray(parsed) ? parsed : Array.isArray(parsed.rows) ? parsed.rows.map((row) => Object.fromEntries((parsed.columns || []).map((column, index) => [column, row[index]]))) : [];
+  } finally {
+    await transport.close().catch(() => {});
+  }
+}
+
+async function retrieveCanonEvidence(projectId) {
+  const escapedProjectId = projectId.replaceAll("'", "''");
+  const query = `SELECT label, fact_type, source_name, scene_label, line_number, excerpt FROM ${clickhouseDatabase}.canon_evidence WHERE project_id = '${escapedProjectId}' ORDER BY source_name, line_number LIMIT 120`;
+  const evidence = await queryThroughClickHouseMcp(query);
+  return { evidence, via: 'official mcp-clickhouse / run_query' };
+}
+
 async function reviewWithCloud(body) {
   if (!body.consent) throw new Error('Cloud review requires explicit consent.');
   const revisionText = String(body.revisionText || '').trim();
@@ -103,12 +141,7 @@ async function reviewWithCloud(body) {
       })),
       format: 'JSONEachRow'
     });
-    const result = await clickhouse.query({
-      query: `SELECT label, fact_type, source_name, scene_label, line_number, excerpt FROM ${clickhouseDatabase}.canon_evidence WHERE project_id = {projectId:String} ORDER BY source_name, line_number LIMIT 120`,
-      query_params: { projectId },
-      format: 'JSONEachRow'
-    });
-    const evidence = await result.json();
+    const { evidence, via } = await retrieveCanonEvidence(projectId);
     const ai = createEnterpriseClient();
     const prompt = `You are the storyIsStraight Continuity Crew. Review an incoming draft against approved canon evidence retrieved from ClickHouse. Return concise JSON only with this exact shape: {"summary":"...","findings":[{"severity":"critical|high|medium|low","confidence":"high|medium|low","title":"...","why":"...","evidence":"source · scene · line","downstream_beats":["specific later beat at risk"],"repair_options":["smallest edit option","canon change option"],"smallest_repair":"..."}]}. Only make a finding when you can cite an evidence row. Downstream beats must be stated in the incoming draft or clearly described as a direct consequence; never invent scenes. Repair options must be concrete and keep human approval required. Do not invent facts.\n\nAPPROVED CANON EVIDENCE:\n${JSON.stringify(evidence)}\n\nINCOMING DRAFT:\n${revisionText.slice(0, 120000)}`;
     const completion = await ai.models.generateContent({ model: process.env.GEMINI_MODEL || 'gemini-2.5-flash', contents: prompt, config: { responseMimeType: 'application/json', temperature: 0.15 } });
@@ -121,7 +154,7 @@ async function reviewWithCloud(body) {
       review,
       evidenceCount: evidence.length,
       trace: [
-        { label: 'Canon Retriever · ClickHouse', detail: `${evidence.length} locked evidence row${evidence.length === 1 ? '' : 's'} loaded.` },
+        { label: 'Canon Retriever · ClickHouse MCP', detail: `${evidence.length} locked evidence row${evidence.length === 1 ? '' : 's'} loaded via ${via}.` },
         { label: 'Continuity Analyst · Gemini', detail: `${revisionLines} non-empty draft line${revisionLines === 1 ? '' : 's'} reviewed with structured output.` },
         { label: 'Impact Mapper · evidence gate', detail: `${findings.length} finding${findings.length === 1 ? '' : 's'} returned; unsupported claims were excluded.` },
         { label: 'Repair Editor · human options', detail: `${findings.length} repair path${findings.length === 1 ? '' : 's'} returned for approval.` },
@@ -165,8 +198,7 @@ async function askCanonWithCloud(body) {
     await clickhouse.exec({ query: `CREATE DATABASE IF NOT EXISTS ${clickhouseDatabase}` });
     await clickhouse.exec({ query: `CREATE TABLE IF NOT EXISTS ${clickhouseDatabase}.canon_evidence (project_id String, fact_id String, label String, fact_type String, source_name String, scene_label String, line_number UInt32, excerpt String, locked_at DateTime) ENGINE = ReplacingMergeTree ORDER BY (project_id, fact_id)` });
     await clickhouse.insert({ table: `${clickhouseDatabase}.canon_evidence`, values: lockedFacts.map((fact) => ({ project_id: projectId, fact_id: String(fact.id || ''), label: String(fact.label || ''), fact_type: String(fact.type || 'state'), source_name: String(fact.line?.file || 'Unknown source'), scene_label: String(fact.line?.sceneLabel || 'Unknown scene'), line_number: Number(fact.line?.lineNumber || 0), excerpt: String(fact.line?.text || '').slice(0, 1200), locked_at: new Date().toISOString().replace('T', ' ').replace('Z', '') })), format: 'JSONEachRow' });
-    const result = await clickhouse.query({ query: `SELECT fact_id, label, fact_type, source_name, scene_label, line_number, excerpt FROM ${clickhouseDatabase}.canon_evidence WHERE project_id = {projectId:String} ORDER BY source_name, line_number LIMIT 120`, query_params: { projectId }, format: 'JSONEachRow' });
-    const evidence = await result.json();
+    const { evidence, via } = await retrieveCanonEvidence(projectId);
     const ai = createEnterpriseClient();
     const prompt = `You are the storyIsStraight Canon Q&A Agent. Answer the question using ONLY the numbered approved evidence rows below. If the rows do not establish an answer, say that the canon does not contain enough evidence. Never infer hidden motives or invent events. Return concise JSON only with this exact shape: {"answer":"...","verdict":"supported|mixed|not_found","confidence":"high|medium|low","evidence_indices":[0]}. evidence_indices must contain only row numbers that directly support the answer.\n\nAPPROVED EVIDENCE:\n${evidence.map((row, index) => `[${index}] ${JSON.stringify(row)}`).join('\n')}\n\nQUESTION:\n${question.slice(0, 500)}`;
     const completion = await ai.models.generateContent({ model: process.env.GEMINI_MODEL || 'gemini-2.5-flash', contents: prompt, config: { responseMimeType: 'application/json', temperature: 0.05 } });
@@ -182,7 +214,7 @@ async function askCanonWithCloud(body) {
       confidence: grounded ? String(parsed.confidence || 'medium') : 'low',
       citations,
       trace: [
-        { label: 'Retrieved approved canon', detail: `${evidence.length} locked evidence row${evidence.length === 1 ? '' : 's'} loaded from ClickHouse.` },
+        { label: 'Retrieved approved canon via MCP', detail: `${evidence.length} locked evidence row${evidence.length === 1 ? '' : 's'} loaded through ${via}.` },
         { label: 'Gemini answered the question', detail: 'The response was constrained to the approved evidence rows.' },
         { label: 'Validated source citations', detail: `${citations.length} citation${citations.length === 1 ? '' : 's'} matched retrieved evidence.` },
         { label: 'Human approval remains required', detail: 'The answer does not change canon or lock new facts.' }
@@ -194,21 +226,24 @@ async function askCanonWithCloud(body) {
 }
 
 const server = createServer(async (request, response) => {
-  if (request.url === '/api/health') return json(response, 200, { configured: configured(), provider: 'Gemini Enterprise + ClickHouse' });
+  if (request.url === '/api/health') {
+    const mcpReady = await clickHouseMcpHealthy();
+    return json(response, 200, { configured: configured() && mcpReady, provider: 'Gemini Enterprise + ClickHouse MCP', clickhouseMcp: mcpReady });
+  }
   if (request.url === '/api/agent/review' && request.method === 'POST') {
-    if (!configured()) return json(response, 503, { error: 'Cloud review is not configured. Set Google Cloud ADC/project and ClickHouse environment variables on the server.' });
+    if (!(configured() && await clickHouseMcpHealthy())) return json(response, 503, { error: 'Cloud review is not ready. Set Google Cloud/ClickHouse variables and start the local ClickHouse MCP sidecar.' });
     if (reviewRateLimited(request)) return json(response, 429, { error: 'Cloud review limit reached. Try again in 15 minutes.' });
     try { return json(response, 200, await reviewWithCloud(await readJson(request))); }
     catch (error) { return json(response, 400, { error: error.message || 'Cloud review failed.' }); }
   }
   if (request.url === '/api/agent/canon-candidates' && request.method === 'POST') {
-    if (!configured()) return json(response, 503, { error: 'AI canon extraction is not configured. Set Google Cloud and ClickHouse environment variables on the server.' });
+    if (!(configured() && await clickHouseMcpHealthy())) return json(response, 503, { error: 'AI canon extraction is not ready. Set Google Cloud/ClickHouse variables and start the local ClickHouse MCP sidecar.' });
     if (reviewRateLimited(request)) return json(response, 429, { error: 'AI request limit reached. Try again in 15 minutes.' });
     try { return json(response, 200, await extractCanonCandidatesWithCloud(await readJson(request))); }
     catch (error) { return json(response, 400, { error: error.message || 'AI canon extraction failed.' }); }
   }
   if (request.url === '/api/agent/ask-canon' && request.method === 'POST') {
-    if (!configured()) return json(response, 503, { error: 'Ask the canon is not configured. Set Google Cloud and ClickHouse environment variables on the server.' });
+    if (!(configured() && await clickHouseMcpHealthy())) return json(response, 503, { error: 'Ask the canon is not ready. Set Google Cloud/ClickHouse variables and start the local ClickHouse MCP sidecar.' });
     if (reviewRateLimited(request)) return json(response, 429, { error: 'AI request limit reached. Try again in 15 minutes.' });
     try { return json(response, 200, await askCanonWithCloud(await readJson(request))); }
     catch (error) { return json(response, 400, { error: error.message || 'Ask the canon failed.' }); }

@@ -17,7 +17,7 @@ The fastest walkthrough is: import Episode 1 as **Canon source**, lock the facts
 - A deterministic canon ledger for explicit deaths, injuries, object states, and numeric-code reveals.
 - Source-backed contradiction alerts with earlier/later evidence, repair framing, and a downstream impact map.
 - An Obsidian-style story graph connecting scenes/beats through story order and shared-character threads.
-- An opt-in cloud evidence review that retrieves approved canon from ClickHouse and asks a Gemini Enterprise continuity agent to evaluate the current incoming draft.
+- An opt-in cloud evidence review that retrieves approved canon from ClickHouse through the official ClickHouse MCP server and asks a Gemini Enterprise continuity agent to evaluate the current incoming draft.
 - Remembered light and dark workspace modes.
 
 The included project, **The Last Loop**, is original demo data. The default workflow reads supported story source files locally in the browser and does not upload them. Its local analysis intentionally covers explicit, source-backed state changes only; Gemini is used only after the writer explicitly opts into cloud evidence review. It works best when drafts use scene or chapter headings and concrete page action.
@@ -26,6 +26,8 @@ The included project, **The Last Loop**, is original demo data. The default work
 
 The local workflow is the default. Cloud review is an explicit, per-review opt-in: it sends only the current incoming-draft text and user-locked canon evidence to the configured cloud services. The server stores evidence rows in ClickHouse; it does not persist the full draft there. `Ask the canon` is a grounded Q&A path that sends only the writer's question and locked evidence, validates Gemini's citation indexes against retrieved ClickHouse rows, and returns `not_found` when the canon cannot support an answer.
 
+ClickHouse is the durable evidence ledger: it keeps approved fact rows with source, scene, line, and excerpt metadata so a season-long project can retrieve the same canon later. Gemini is the reasoning layer, not the database. The server runs the official [`mcp-clickhouse`](https://github.com/ClickHouse/mcp-clickhouse) HTTP sidecar locally and uses the Model Context Protocol `run_query` tool for read-only canon retrieval. This gives the continuity agent a governed, inspectable tool boundary instead of an opaque database call.
+
 1. Copy `.env.example` to your secret store or local environment. Authenticate local development with Application Default Credentials (`gcloud auth application-default login`); hosted deployments use a sealed service-account JSON variable. Set your Google Cloud project/location, enable billing and Gemini Enterprise Agent Platform, and configure a private ClickHouse service.
 2. Build the app and run the combined app/API server:
 
@@ -33,6 +35,8 @@ The local workflow is the default. Cloud review is an explicit, per-review opt-i
 npm run build
 npm run serve
 ```
+
+The production Docker image starts the read-only `mcp-clickhouse` sidecar before the Node API. Set `CLICKHOUSE_MCP_AUTH_TOKEN` in the hosting provider's secret store; the sidecar listens on localhost and is never exposed as a public endpoint.
 
 For local UI development, run `npm start` and `npm run serve` in separate terminals; Vite proxies `/api` to the agent server.
 
