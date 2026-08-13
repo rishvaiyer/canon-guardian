@@ -12,7 +12,7 @@ const distDirectory = join(process.cwd(), 'dist');
 const clickhouseDatabase = (process.env.CLICKHOUSE_DATABASE || 'story_is_straight').replace(/[^A-Za-z0-9_]/g, '');
 
 function configured() {
-  return Boolean(process.env.GOOGLE_CLOUD_PROJECT && process.env.CLICKHOUSE_HOST && process.env.CLICKHOUSE_PASSWORD);
+  return Boolean(process.env.GOOGLE_CLOUD_PROJECT && process.env.CLICKHOUSE_HOST && Object.hasOwn(process.env, 'CLICKHOUSE_PASSWORD'));
 }
 
 function contentType(path) {
@@ -45,10 +45,9 @@ async function reviewWithCloud(body) {
 
   const projectId = safeProjectName(body.projectTitle);
   const clickhouse = createClient({
-    host: process.env.CLICKHOUSE_HOST,
+    url: process.env.CLICKHOUSE_HOST,
     username: process.env.CLICKHOUSE_USER || 'default',
-    password: process.env.CLICKHOUSE_PASSWORD,
-    database: clickhouseDatabase
+    password: process.env.CLICKHOUSE_PASSWORD
   });
   try {
     await clickhouse.exec({ query: `CREATE DATABASE IF NOT EXISTS ${clickhouseDatabase}` });
