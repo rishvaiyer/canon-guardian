@@ -2,6 +2,14 @@
 
 **Get your story straight.** Evidence-backed continuity intelligence for authors, writers' rooms, filmmakers, and any long-form story world.
 
+## Try the live demo
+
+- Hosted app: https://app-production-517f.up.railway.app/
+- Source: https://github.com/rishvaiyer/canon-guardian
+- Synthetic walkthrough files: [`demo/episode-01-canon.txt`](demo/episode-01-canon.txt) and [`demo/episode-02-revision.txt`](demo/episode-02-revision.txt)
+
+The fastest walkthrough is: import Episode 1 as **Canon source**, lock the facts, import Episode 2 as **Incoming revision**, run the local continuity check, then open the impact map. For a PDF source with a contradiction, use **Download annotated PDF** to receive a local marked-up copy plus an evidence appendix.
+
 ## What this MVP demonstrates
 
 - Browser-local import for manuscript chapters, screenplays, teleplays, plays, treatments, outlines, and other page-based drafts in PDF, `.docx`, `.txt`, Fountain, and Final Draft `.fdx`.
@@ -29,6 +37,15 @@ npm run serve
 For local UI development, run `npm start` and `npm run serve` in separate terminals; Vite proxies `/api` to the agent server.
 
 The `AI evidence review` button intentionally fails closed until both cloud services are configured and the writer checks the consent box.
+
+The cloud path is deliberately separate from the local path: the browser sends the current incoming draft and approved evidence only after explicit consent; the server stores approved evidence rows in ClickHouse and asks Gemini for structured, evidence-cited findings. The local checker remains available offline and is the default review path.
+
+## Submission/runtime notes
+
+- The included demo material is original synthetic fiction created for this repository; it is not a real screenplay.
+- The app supports PDF, `.docx`, `.txt`, Fountain, and Final Draft `.fdx` imports. Full source text is not persisted in browser storage.
+- The public demo is configured with Gemini Enterprise and ClickHouse on Railway. Do not paste credentials into the frontend or commit `.env` files.
+- This repository is licensed under the MIT License.
 
 ## Run
 
