@@ -82,7 +82,7 @@ Cloud review responses use `analysis_version: continuity-crew-v2` and support ei
 
 `direct_contradiction`, `timeline_impossibility`, `knowledge_leak`, `character_state_conflict`, `relationship_drift`, `prop_location_mismatch`, `setup_payoff_gap`, and `needs_review`.
 
-The response also includes evidence-backed impact scope, confidence, repair options, scored `repair_plan` entries, and aggregate metrics.
+The response also includes evidence-backed impact scope, confidence, repair options, scored `repair_plan` entries, and aggregate metrics. CanonCue's transparent heuristic ranks each finding with evidence strength (30%), contradiction strength (25%), downstream blast radius (25%), timeline certainty (10%), and Gemini confidence (10%). Repair options are scored separately for canon preservation (40%), blast-radius reduction (30%), edit effort (20%), and confidence (10%). These are explainable decision aids, not a trained replacement for editorial judgment.
 
 ## Run locally
 

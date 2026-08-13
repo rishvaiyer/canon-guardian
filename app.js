@@ -1183,21 +1183,22 @@ function renderCloudFindings(review) {
     number: `AI ${String(index + 1).padStart(2, '0')}`,
     title: finding.title || 'Continuity concern',
     severity: String(finding.severity || 'review').toUpperCase(),
-    summary: `${finding.why || 'The agent found a source-backed concern.'}${finding.confidence ? ` · ${String(finding.confidence).toUpperCase()} confidence` : ''}`,
+    summary: `${finding.why || 'The agent found a source-backed concern.'}${finding.confidence ? ` · ${String(finding.confidence).toUpperCase()} confidence` : ''}${Number.isFinite(finding.finding_score) ? ` · ${finding.finding_score}/100 evidence score` : ''}`,
     heading: finding.title || 'Evidence-backed continuity concern.',
-    copy: `${finding.why || 'Review this claim against the cited canon evidence.'} ${Array.isArray(finding.downstream_beats) && finding.downstream_beats.length ? `Downstream at risk: ${finding.downstream_beats.join(' · ')}.` : ''} Repair options: ${Array.isArray(finding.repair_options) && finding.repair_options.length ? finding.repair_options.join(' / ') : finding.smallest_repair || 'Review this beat with the story editor.'}`,
+    copy: `${finding.why || 'Review this claim against the cited canon evidence.'} ${Number.isFinite(finding.finding_score) ? `CanonCue score: ${finding.finding_score}/100 (${finding.score_rationale || 'weighted evidence review'}).` : ''} ${Array.isArray(finding.downstream_beats) && finding.downstream_beats.length ? `Downstream at risk: ${finding.downstream_beats.join(' · ')}.` : ''} Repair options: ${Array.isArray(finding.repair_options) && finding.repair_options.length ? finding.repair_options.join(' / ') : finding.smallest_repair || 'Review this beat with the story editor.'}`,
     repairOptions: Array.isArray(finding.repair_plan) && finding.repair_plan.length ? finding.repair_plan.map((option) => `${option.label} · score ${option.score}/100`) : finding.repair_options,
     smallestRepair: finding.smallest_repair,
     evidence: `GEMINI EVIDENCE · ${finding.evidence || 'Retrieved canon evidence'}`,
     nodes: [
       ['CANON EVIDENCE', finding.evidence || 'Approved source', 'Retrieved from ClickHouse'],
-      ['BREAK DETECTOR', finding.title || 'Continuity concern', `${String(finding.confidence || 'review').toUpperCase()} confidence · Gemini`],
+      ['BREAK DETECTOR', finding.title || 'Continuity concern', `${Number.isFinite(finding.finding_score) ? `${finding.finding_score}/100 evidence score · ` : ''}${String(finding.confidence || 'review').toUpperCase()} confidence · Gemini`],
       ['REPAIR PLAN', finding.smallest_repair || (Array.isArray(finding.repair_options) ? finding.repair_options[0] : null) || 'Editor review required', `${finding.finding_type || 'continuity'} · ${Array.isArray(finding.downstream_beats) ? finding.downstream_beats.length : 0} downstream beat${Array.isArray(finding.downstream_beats) && finding.downstream_beats.length === 1 ? '' : 's'} at risk`]
     ]
   }]));
   activeKey = 'cloud-0';
   renderImpact(activeKey);
-  response.innerHTML = `<span class="response-kicker">CONTINUITY CREW / GEMINI + CLICKHOUSE</span><p><b>${escapeHtml(review.summary || `${allFindings.length} evidence-backed ${allFindings.length === 1 ? 'concern' : 'concerns'} found.`)}</b> Showing ${findings.length} of ${allFindings.length} findings. The crew separated canon evidence, break detection, downstream risk, and repair options for your approval.</p>`;
+  const metrics = review?.metrics || {};
+  response.innerHTML = `<span class="response-kicker">CONTINUITY CREW / GEMINI + CLICKHOUSE</span><p><b>${escapeHtml(review.summary || `${allFindings.length} evidence-backed ${allFindings.length === 1 ? 'concern' : 'concerns'} found.`)}</b> Showing ${findings.length} of ${allFindings.length} findings. Average evidence score: ${Number.isFinite(metrics.score_average) ? `${metrics.score_average}/100` : 'not available'}. The crew separated canon evidence, break detection, downstream risk, and repair options for your approval.</p>`;
 }
 
 async function runCloudReview() {
