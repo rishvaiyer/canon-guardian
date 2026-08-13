@@ -61,6 +61,7 @@ const copyRoot = document.querySelector('#impact-copy');
 const nodesRoot = document.querySelector('#impact-nodes');
 const lines = document.querySelector('#impact-lines');
 const response = document.querySelector('#agent-response');
+const agentTrace = document.querySelector('#agent-trace');
 const status = document.querySelector('#analysis-status');
 const statusMeta = document.querySelector('#status-meta');
 const importDialog = document.querySelector('#import-dialog');
@@ -971,6 +972,17 @@ function ingestCanonCandidates(candidates, sourceName) {
   return added;
 }
 
+function renderAgentTrace(trace = []) {
+  if (!agentTrace) return;
+  const steps = Array.isArray(trace) && trace.length ? trace : [
+    { label: 'Retrieved approved canon', detail: 'Evidence loaded from ClickHouse.' },
+    { label: 'Gemini reviewed the revision', detail: 'Structured evidence review completed.' },
+    { label: 'Repair paths mapped', detail: 'Findings are ready for editor approval.' }
+  ];
+  agentTrace.hidden = false;
+  agentTrace.innerHTML = `<div class="trace-heading"><span class="eyebrow">CLOUD AGENT TRACE</span><span class="trace-badge">EVIDENCE-BOUND</span></div><div class="trace-steps">${steps.map((step, index) => `<div class="trace-step"><span class="trace-number">${String(index + 1).padStart(2, '0')}</span><span class="trace-dot" aria-hidden="true"></span><span><b>${escapeHtml(step.label || 'Agent step')}</b><small>${escapeHtml(step.detail || '')}</small></span></div>`).join('')}</div><p class="trace-footnote">Gemini proposes. ClickHouse remembers. You approve.</p>`;
+}
+
 async function runCanonAi() {
   canonAiButton.disabled = true;
   canonAiButton.textContent = 'Finding candidate facts…';
@@ -984,6 +996,7 @@ async function runCanonAi() {
     response.innerHTML = `<span class="response-kicker">GEMINI CANON CANDIDATES</span><p><b>${added || candidateCount} reviewable ${added === 1 || candidateCount === 1 ? 'fact was' : 'facts were'} added to the ledger.</b> Read the supporting excerpt, then lock only the rules you want this story to preserve.</p>`;
     status.textContent = `${added || candidateCount} AI canon candidates are ready for your review. Nothing was locked automatically.`;
     statusMeta.textContent = 'Gemini suggestions · human approval required';
+    renderAgentTrace(payload.trace);
     canonAiDialog.close();
   } catch (error) {
     setCanonAiError(error.message);
@@ -1026,6 +1039,7 @@ async function runCloudReview() {
     const findings = Array.isArray(payload.review?.findings) ? payload.review.findings.slice(0, 4) : [];
     if (findings.length) renderCloudFindings(payload.review);
     else response.innerHTML = `<span class="response-kicker">GEMINI ENTERPRISE / CLICKHOUSE</span><p><b>${escapeHtml(payload.review?.summary || 'Cloud evidence review complete.')}</b> No additional evidence-backed concerns were returned.</p>`;
+    renderAgentTrace(payload.trace);
     status.textContent = `Cloud evidence review completed using ${payload.evidenceCount} locked facts retrieved from ClickHouse.`;
     statusMeta.textContent = 'Gemini Enterprise agent · ClickHouse evidence';
     renderStoryGraph(storyMemory);

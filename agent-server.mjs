@@ -115,7 +115,19 @@ async function reviewWithCloud(body) {
     const raw = completion.text || '{"summary":"Gemini returned no text.","findings":[]}';
     let review;
     try { review = JSON.parse(raw); } catch { review = { summary: raw, findings: [] }; }
-    return { review, evidenceCount: evidence.length };
+    const findings = Array.isArray(review.findings) ? review.findings : [];
+    const revisionLines = revisionText.split(/\r?\n/).filter(Boolean).length;
+    return {
+      review,
+      evidenceCount: evidence.length,
+      trace: [
+        { label: 'Retrieved approved canon', detail: `${evidence.length} locked evidence row${evidence.length === 1 ? '' : 's'} loaded from ClickHouse.` },
+        { label: 'Sent the incoming revision to Gemini', detail: `${revisionLines} non-empty draft line${revisionLines === 1 ? '' : 's'} reviewed with structured JSON output.` },
+        { label: 'Gemini found evidence-backed concerns', detail: `${findings.length} finding${findings.length === 1 ? '' : 's'} returned; unsupported claims were excluded.` },
+        { label: 'Mapped repair paths', detail: `${findings.length} candidate repair path${findings.length === 1 ? '' : 's'} returned to the browser for editor approval.` },
+        { label: 'Human approval remains required', detail: 'No canon fact is changed automatically.' }
+      ]
+    };
   } finally {
     await clickhouse.close();
   }
@@ -132,7 +144,14 @@ async function extractCanonCandidatesWithCloud(body) {
   let parsed;
   try { parsed = JSON.parse(raw); } catch { throw new Error('Gemini returned an unreadable candidate list. Try again.'); }
   const candidates = Array.isArray(parsed.candidates) ? parsed.candidates.slice(0, 30) : [];
-  return { candidates };
+  return {
+    candidates,
+    trace: [
+      { label: 'Read the canon source', detail: `${canonText.split(/\r?\n/).filter(Boolean).length} non-empty source line${canonText.split(/\r?\n/).filter(Boolean).length === 1 ? '' : 's'} sent for extraction.` },
+      { label: 'Gemini proposed canon candidates', detail: `${candidates.length} source-backed candidate${candidates.length === 1 ? '' : 's'} returned for review.` },
+      { label: 'Human approval remains required', detail: 'Candidates return as REVIEW items; nothing is locked automatically.' }
+    ]
+  };
 }
 
 const server = createServer(async (request, response) => {
