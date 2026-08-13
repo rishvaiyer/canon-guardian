@@ -87,6 +87,8 @@ const storyGraphNodes = document.querySelector('#story-graph-nodes');
 const storyGraphLines = document.querySelector('#story-graph-lines');
 const storyGraphDetail = document.querySelector('#story-graph-detail');
 const storyGraphNote = document.querySelector('#story-graph-note');
+const sceneIndexList = document.querySelector('#scene-index-list');
+const sceneIndexCount = document.querySelector('#scene-index-count');
 const characterFilters = document.querySelector('#character-filters');
 const characterInspector = document.querySelector('#character-inspector');
 const atlasModes = document.querySelector('#atlas-modes');
@@ -506,6 +508,19 @@ function renderAtlasModes(allNodes, candidateCount) {
   atlasExpand.textContent = showFullMap ? 'Use readable map ↙' : `Show all ${candidateCount || allNodes.length} scenes ↗`;
 }
 
+function renderSceneIndex(nodes) {
+  sceneIndexCount.textContent = `${nodes.length} ${nodes.length === 1 ? 'scene' : 'scenes'}`;
+  if (!nodes.length) {
+    sceneIndexList.innerHTML = '<p class="empty-queue">No scenes match this filter.</p>';
+    return;
+  }
+  sceneIndexList.innerHTML = nodes.map((node, index) => {
+    const evidence = nodeHasEvidence(node);
+    const selected = index === activeGraphNode;
+    return `<button class="scene-index-row ${selected ? 'active' : ''}" data-atlas-scene="${index}" type="button"><span class="scene-index-number">${String(index + 1).padStart(2, '0')}</span><span class="scene-index-copy"><b>${escapeHtml(node.label)}</b><strong>${escapeHtml(node.title)}</strong><small>${escapeHtml(node.characters.length ? node.characters.join(' · ') : 'No named thread')}${evidence ? ' · evidence' : ''}</small></span><span class="scene-index-arrow">↗</span></button>`;
+  }).join('');
+}
+
 function renderStoryGraph(memory) {
   const allNodes = deriveStoryGraph(memory);
   renderCharacterLens(allNodes);
@@ -513,6 +528,8 @@ function renderStoryGraph(memory) {
   const candidateNodes = activeCharacter === 'ALL' ? atlasNodes : atlasNodes.filter((node) => node.characters.includes(activeCharacter));
   const nodes = showFullMap ? candidateNodes : candidateNodes.slice(0, 36);
   renderAtlasModes(allNodes, candidateNodes.length);
+  activeGraphNode = Math.min(activeGraphNode, Math.max(0, candidateNodes.length - 1));
+  renderSceneIndex(candidateNodes);
   const savedLedgerGraph = !memory && projectLedger.facts.length > 0;
   if (!nodes.length) {
     storyGraphLines.innerHTML = '';
@@ -524,7 +541,7 @@ function renderStoryGraph(memory) {
   }
   const edges = buildGraphEdges(nodes);
   const positions = makeGraphLayout(nodes, edges);
-  activeGraphNode = Math.min(activeGraphNode, Math.max(0, nodes.length - 1));
+  const graphNodeIndex = Math.min(activeGraphNode, Math.max(0, nodes.length - 1));
   const toPoint = ([x, y]) => [x * 10, y * 5.6];
   const edgeLines = edges.order.map(([from, to]) => {
     const [x1, y1] = toPoint(positions[from]);
@@ -537,8 +554,8 @@ function renderStoryGraph(memory) {
     return `<line class="graph-edge character" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" />`;
   });
   storyGraphLines.innerHTML = `${edgeLines.join('')}${threadLines.join('')}`;
-  storyGraphNodes.innerHTML = nodes.map((node, index) => `<button class="story-node ${index === activeGraphNode ? 'active' : ''}" data-graph-node="${index}" style="left:${positions[index][0]}%;top:${positions[index][1]}%"><span>${escapeHtml(node.label)}</span><b>${escapeHtml(node.title)}</b>${node.characters.length ? `<small>${escapeHtml(node.characters.join(' · '))}</small>` : ''}</button>`).join('');
-  const selected = nodes[activeGraphNode];
+  storyGraphNodes.innerHTML = nodes.map((node, index) => `<button class="story-node ${index === graphNodeIndex ? 'active' : ''}" data-graph-node="${index}" style="left:${positions[index][0]}%;top:${positions[index][1]}%"><span>${escapeHtml(node.label)}</span><b>${escapeHtml(node.title)}</b>${node.characters.length ? `<small>${escapeHtml(node.characters.join(' · '))}</small>` : ''}</button>`).join('');
+  const selected = nodes[graphNodeIndex];
   const sceneFacts = (storyMemory?.facts || []).filter((fact) => fact.line.sceneLabel === selected.label || fact.line.sceneLabel.startsWith(`${selected.label}:`));
   storyGraphDetail.innerHTML = `<p class="eyebrow">${escapeHtml(selected.label)} / ${memory ? 'IMPORTED SOURCE' : savedLedgerGraph ? 'SAVED CANON' : 'SAMPLE PROJECT'}</p><h3>${escapeHtml(selected.title)}</h3><p>${escapeHtml(selected.excerpt)}</p><span>${selected.characters.length ? `${escapeHtml(selected.characters.join(' · '))} thread` : 'No named character thread extracted'}</span>${sceneFacts.length ? `<button class="text-button graph-lock" data-lock-scene="${escapeHtml(selected.label)}">Lock ${sceneFacts.length} fact${sceneFacts.length === 1 ? '' : 's'} from this scene</button>` : ''}`;
   storyGraphNote.textContent = memory
@@ -1168,6 +1185,15 @@ storyGraphNodes.addEventListener('click', (event) => {
   if (!node) return;
   activeGraphNode = Number(node.dataset.graphNode);
   renderStoryGraph(storyMemory);
+});
+
+sceneIndexList.addEventListener('click', (event) => {
+  const row = event.target.closest('[data-atlas-scene]');
+  if (!row) return;
+  activeGraphNode = Number(row.dataset.atlasScene);
+  if (activeGraphNode >= 36) showFullMap = true;
+  renderStoryGraph(storyMemory);
+  document.querySelector('.story-graph-panel')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 });
 
 characterFilters.addEventListener('click', (event) => {

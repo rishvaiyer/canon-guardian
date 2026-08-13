@@ -132,11 +132,12 @@
         <section class="story-map-section" id="story-map">
           <div class="impact-head">
             <div>
-              <p class="eyebrow">WHOLE STORY VIEW</p>
-              <h2>Your story, <em>connected.</em></h2>
+              <p class="eyebrow">STORY ATLAS</p>
+              <h2>Browse your story, <em>scene by scene.</em></h2>
             </div>
-            <div class="graph-legend"><span class="legend-line order"></span> scene order <span class="legend-line character"></span> shared character</div>
+            <div class="graph-legend">The list finds the scene. The graph shows what it touches.</div>
           </div>
+          <div class="atlas-explainer"><strong>What this does:</strong><span>Pick a character or scene to see its evidence, connected characters, and downstream story path. The scene index is the complete, readable view; the graph is the visual overview.</span></div>
           <div class="character-browser" aria-label="Character navigator">
             <div><p class="eyebrow">CHARACTER LENS</p><p class="character-browser-copy">Choose a character to isolate their scenes, thread, and approved canon.</p></div>
             <div class="character-filters" id="character-filters" aria-label="Filter story map by character"></div>
@@ -146,10 +147,18 @@
             <div class="atlas-modes" id="atlas-modes" role="group" aria-label="Filter story map"><button class="atlas-mode active" data-atlas-mode="all" type="button">All scenes</button><button class="atlas-mode" data-atlas-mode="evidence" type="button">Evidence</button><button class="atlas-mode" data-atlas-mode="breaks" type="button">Break paths</button></div>
             <button class="text-button atlas-expand" id="atlas-expand" type="button">Show the full map ↗</button>
           </div>
-          <div class="story-graph-panel" aria-live="polite">
-            <svg class="story-graph-lines" id="story-graph-lines" viewBox="0 0 1000 560" preserveAspectRatio="none" aria-hidden="true"></svg>
-            <div class="story-graph-nodes" id="story-graph-nodes"></div>
-            <div class="story-graph-detail" id="story-graph-detail"></div>
+          <div class="atlas-layout">
+            <aside class="scene-index" aria-label="Complete scene index">
+              <div class="scene-index-head"><span class="eyebrow">SCENE INDEX</span><span id="scene-index-count">0 scenes</span></div>
+              <p class="scene-index-help">Click a row to inspect it in the graph.</p>
+              <div class="scene-index-list" id="scene-index-list"></div>
+            </aside>
+            <div class="story-graph-panel" aria-live="polite">
+              <div class="graph-panel-label"><span class="eyebrow">RELATIONSHIP VIEW</span><span><i class="legend-line order"></i> order <i class="legend-line character"></i> character thread</span></div>
+              <svg class="story-graph-lines" id="story-graph-lines" viewBox="0 0 1000 560" preserveAspectRatio="none" aria-hidden="true"></svg>
+              <div class="story-graph-nodes" id="story-graph-nodes"></div>
+              <div class="story-graph-detail" id="story-graph-detail"></div>
+            </div>
           </div>
           <p class="graph-note" id="story-graph-note">The sample graph links the fixed events that drive The Last Loop. Import a script to map every detected scene.</p>
         </section>
