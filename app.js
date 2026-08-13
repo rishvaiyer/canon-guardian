@@ -68,6 +68,10 @@ const dropZone = document.querySelector('#drop-zone');
 const importQueue = document.querySelector('#import-queue');
 const importError = document.querySelector('#import-error');
 const importRole = document.querySelector('#import-role');
+const cloudDialog = document.querySelector('#cloud-dialog');
+const cloudConsent = document.querySelector('#cloud-consent');
+const cloudError = document.querySelector('#cloud-error');
+const cloudReviewButton = document.querySelector('#run-cloud-review');
 const useImport = document.querySelector('#use-import');
 const projectTitle = document.querySelector('#project-title');
 const projectMeta = document.querySelector('#project-meta');
@@ -548,6 +552,44 @@ function setImportError(message = '') {
   importError.textContent = message;
 }
 
+function setCloudError(message = '') {
+  cloudError.hidden = !message;
+  cloudError.textContent = message;
+}
+
+function cloudReviewPayload() {
+  const lockedFacts = projectLedger.facts.filter((fact) => fact.locked);
+  if (!storyMemory || currentImportRole !== 'revision') throw new Error('Import the current draft as an Incoming draft before running cloud evidence review.');
+  if (!lockedFacts.length) throw new Error('Lock at least one canon fact before running cloud evidence review.');
+  return {
+    consent: true,
+    projectTitle: projectTitle.textContent,
+    lockedFacts,
+    revisionText: storyMemory.lines.map((line) => line.text).join('\n').slice(0, 120000)
+  };
+}
+
+async function runCloudReview() {
+  cloudReviewButton.disabled = true;
+  cloudReviewButton.textContent = 'Retrieving evidence…';
+  setCloudError();
+  try {
+    const cloudHttpResponse = await fetch('/api/agent/review', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cloudReviewPayload()) });
+    const payload = await cloudHttpResponse.json();
+    if (!cloudHttpResponse.ok) throw new Error(payload.error || 'Cloud evidence review could not be completed.');
+    const findings = Array.isArray(payload.review?.findings) ? payload.review.findings.slice(0, 4) : [];
+    response.innerHTML = `<span class="response-kicker">GEMINI ENTERPRISE / CLICKHOUSE</span><p><b>${escapeHtml(payload.review?.summary || 'Cloud evidence review complete.')}</b>${findings.length ? ` ${findings.map((finding) => `${escapeHtml(finding.severity || 'review').toUpperCase()}: ${escapeHtml(finding.title || 'Continuity concern')}. ${escapeHtml(finding.smallest_repair || finding.why || '')}`).join(' ')}` : ' No additional evidence-backed concerns were returned.'}</p>`;
+    status.textContent = `Cloud evidence review completed using ${payload.evidenceCount} locked facts retrieved from ClickHouse.`;
+    statusMeta.textContent = 'Gemini Enterprise agent · ClickHouse evidence';
+    cloudDialog.close();
+  } catch (error) {
+    setCloudError(error.message);
+  } finally {
+    cloudReviewButton.textContent = 'Run cloud evidence review';
+    cloudReviewButton.disabled = !cloudConsent.checked;
+  }
+}
+
 function addFiles(files) {
   const allowable = Array.from(files).filter((file) => /\.(txt|fountain|fdx|pdf|docx)$/i.test(file.name));
   const newFiles = allowable.filter((file) => !stagedFiles.some(({ file: staged }) => staged.name === file.name && staged.size === file.size));
@@ -659,6 +701,15 @@ async function buildStoryMemory() {
 
 document.querySelector('#open-upload').addEventListener('click', () => importDialog.showModal());
 document.querySelector('#close-upload').addEventListener('click', () => { setImportError(); importDialog.close(); });
+document.querySelector('#open-cloud-review').addEventListener('click', () => {
+  setCloudError();
+  cloudConsent.checked = false;
+  cloudReviewButton.disabled = true;
+  cloudDialog.showModal();
+});
+document.querySelector('#close-cloud').addEventListener('click', () => { setCloudError(); cloudDialog.close(); });
+cloudConsent.addEventListener('change', () => { cloudReviewButton.disabled = !cloudConsent.checked; });
+cloudReviewButton.addEventListener('click', runCloudReview);
 uploadInput.addEventListener('change', (event) => addFiles(event.target.files));
 useImport.addEventListener('click', buildStoryMemory);
 importQueue.addEventListener('click', (event) => {

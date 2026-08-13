@@ -47,6 +47,7 @@
           <div class="top-actions">
             <button class="theme-button" id="theme-toggle" type="button" aria-pressed="false" title="Switch to light mode"><span aria-hidden="true">☼</span> Light</button>
             <button class="secondary-button" id="open-upload">+ Add pages</button>
+            <button class="secondary-button cloud-button" id="open-cloud-review" type="button"><span class="spark">✦</span> AI evidence review</button>
             <button class="primary-button" id="run-analysis"><span class="spark">✦</span> Check continuity</button>
           </div>
         </header>
@@ -162,6 +163,17 @@
         </div>
         <p class="import-error" id="import-error" role="alert" hidden></p>
         <div class="import-footer"><span><i></i> Files stay on this device.</span><button class="primary-button" id="use-import" disabled>Build story memory</button></div>
+      </div>
+    </dialog>
+    <dialog class="import-dialog cloud-dialog" id="cloud-dialog" aria-labelledby="cloud-title">
+      <div class="dialog-topline"><span>OPT-IN CLOUD REVIEW</span><button class="close-dialog" id="close-cloud" aria-label="Close cloud review">×</button></div>
+      <div class="import-content">
+        <p class="eyebrow">GEMINI ENTERPRISE + CLICKHOUSE</p>
+        <h2 id="cloud-title">Ask the agent for a <em>deeper</em> read.</h2>
+        <p class="import-intro">The agent retrieves your locked evidence from ClickHouse, then uses Gemini Enterprise to look for nuanced continuity breaks in the current incoming draft. This sends the locked evidence and current draft text to your configured cloud services.</p>
+        <label class="cloud-consent"><input id="cloud-consent" type="checkbox" /> <span>I understand that this review sends the current draft and locked evidence to my configured Gemini Enterprise and ClickHouse accounts.</span></label>
+        <p class="import-error" id="cloud-error" role="alert" hidden></p>
+        <div class="import-footer"><span><i></i> The deterministic local checker remains private and available offline.</span><button class="primary-button" id="run-cloud-review" disabled>Run cloud evidence review</button></div>
       </div>
     </dialog>
     <script type="module" src="theme.js"></script>
