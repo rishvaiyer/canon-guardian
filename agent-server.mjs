@@ -3,6 +3,7 @@ import { createClient } from '@clickhouse/client';
 import { GoogleGenAI } from '@google/genai';
 import { Client as McpClient } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { normalizeReview } from './continuity-analysis.mjs';
 import { createReadStream, existsSync } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { createServer } from 'node:http';
@@ -151,21 +152,22 @@ async function reviewWithCloud(body) {
     });
     const { evidence, via } = await retrieveCanonEvidence(projectId);
     const ai = createEnterpriseClient();
-    const prompt = `You are the storyIsStraight Continuity Crew. Review an incoming draft against approved canon evidence retrieved from ClickHouse. Return concise JSON only with this exact shape: {"summary":"...","findings":[{"severity":"critical|high|medium|low","confidence":"high|medium|low","title":"...","why":"...","evidence":"source · scene · line","downstream_beats":["specific later beat at risk"],"repair_options":["smallest edit option","canon change option"],"smallest_repair":"..."}]}. Only make a finding when you can cite an evidence row. Downstream beats must be stated in the incoming draft or clearly described as a direct consequence; never invent scenes. Repair options must be concrete and keep human approval required. Do not invent facts.\n\nAPPROVED CANON EVIDENCE:\n${JSON.stringify(evidence)}\n\nINCOMING DRAFT:\n${revisionText.slice(0, 120000)}`;
+    const prompt = `You are the storyIsStraight Continuity Crew. Review an incoming draft against approved canon evidence retrieved from ClickHouse. Return concise JSON only. Use this exact shape: {"summary":"...","findings":[{"severity":"critical|high|medium|low","confidence":"high|medium|low","finding_type":"direct_contradiction|timeline_impossibility|knowledge_leak|character_state_conflict|relationship_drift|prop_location_mismatch|setup_payoff_gap|needs_review","status":"confirmed|probable|needs_review","title":"...","why":"...","evidence_indices":[0],"evidence_excerpt":"short exact excerpt from a cited row","downstream_beats":["specific later beat at risk"],"impact_scope":"scene|episode|season|series","repair_options":[{"label":"smallest edit option","description":"what changes","canon_preservation":"high|medium|low","downstream_risk":"high|medium|low","edit_effort":"high|medium|low","confidence":"high|medium|low","tradeoffs":["..." ]}],"smallest_repair":"..."}]}. Evidence indices are zero-based indexes into the evidence rows below and are mandatory for every finding. Only make a finding when at least one evidence row directly supports it. Classify a direct contradiction only when the incoming draft asserts the incompatible state; use needs_review for ambiguity. Downstream beats must be stated in the incoming draft or clearly described as a direct consequence; never invent scenes. Repair options must be concrete, ranked implicitly by their dimensions, and keep human approval required. Do not invent facts.\n\nAPPROVED CANON EVIDENCE (numbered rows):\n${evidence.map((row, index) => `[${index}] ${JSON.stringify(row)}`).join('\n')}\n\nINCOMING DRAFT:\n${revisionText.slice(0, 120000)}`;
     const completion = await ai.models.generateContent({ model: process.env.GEMINI_MODEL || 'gemini-2.5-flash', contents: prompt, config: { responseMimeType: 'application/json', temperature: 0.15 } });
     const raw = completion.text || '{"summary":"Gemini returned no text.","findings":[]}';
     let review;
     try { review = JSON.parse(raw); } catch { review = { summary: raw, findings: [] }; }
-    const findings = Array.isArray(review.findings) ? review.findings : [];
+    const normalizedReview = normalizeReview(review, evidence);
+    const findings = normalizedReview.findings;
     const revisionLines = revisionText.split(/\r?\n/).filter(Boolean).length;
     return {
-      review,
+      review: normalizedReview,
       evidenceCount: evidence.length,
       trace: [
         { label: 'Canon Retriever · ClickHouse MCP', detail: `${evidence.length} locked evidence row${evidence.length === 1 ? '' : 's'} loaded via ${via}.` },
-        { label: 'Continuity Analyst · Gemini', detail: `${revisionLines} non-empty draft line${revisionLines === 1 ? '' : 's'} reviewed with structured output.` },
+        { label: 'Continuity Analyst · Gemini', detail: `${revisionLines} non-empty draft line${revisionLines === 1 ? '' : 's'} classified across ${Object.keys(normalizedReview.taxonomy.counts).length} continuity types.` },
         { label: 'Impact Mapper · evidence gate', detail: `${findings.length} finding${findings.length === 1 ? '' : 's'} returned; unsupported claims were excluded.` },
-        { label: 'Repair Editor · human options', detail: `${findings.length} repair path${findings.length === 1 ? '' : 's'} returned for approval.` },
+        { label: 'Repair Editor · scored options', detail: `${normalizedReview.metrics.repairable_findings} repair plan${normalizedReview.metrics.repairable_findings === 1 ? '' : 's'} ranked by canon preservation, risk, and effort.` },
         { label: 'Human approval remains required', detail: 'No canon fact is changed automatically.' }
       ]
     };

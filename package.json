@@ -9,7 +9,8 @@
     "start": "vite --host 0.0.0.0",
     "build": "vite build",
     "serve": "node agent-server.mjs",
-    "check:server": "node --check agent-server.mjs"
+    "check:server": "node --check agent-server.mjs",
+    "test:analysis": "node --test continuity-analysis.test.mjs"
   },
   "dependencies": {
     "@clickhouse/client": "^1.23.1",

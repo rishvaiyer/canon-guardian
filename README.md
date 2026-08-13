@@ -18,6 +18,7 @@ The fastest walkthrough is: import Episode 1 as **Canon source**, lock the facts
 - Source-backed contradiction alerts with earlier/later evidence, repair framing, and a downstream impact map.
 - An Obsidian-style story graph connecting scenes/beats through story order and shared-character threads.
 - An opt-in cloud evidence review that retrieves approved canon from ClickHouse through the official ClickHouse MCP server and asks a Gemini Enterprise continuity agent to evaluate the current incoming draft.
+- A structured Continuity Crew analysis contract: eight finding types, evidence-index validation, impact scope, and ranked repair plans that score canon preservation, downstream risk, edit effort, and confidence.
 - Remembered light and dark workspace modes.
 
 The included project, **The Last Loop**, is original demo data. The default workflow reads supported story source files locally in the browser and does not upload them. Its local analysis intentionally covers explicit, source-backed state changes only; Gemini is used only after the writer explicitly opts into cloud evidence review. It works best when drafts use scene or chapter headings and concrete page action.
@@ -43,6 +44,8 @@ For local UI development, run `npm start` and `npm run serve` in separate termin
 The `AI evidence review`, `Generate canon`, and `Ask the canon` buttons intentionally fail closed until the cloud service is configured and the writer checks the relevant consent box. Every cloud response includes a visible agent trace and keeps human approval in the loop.
 
 The cloud path is deliberately separate from the local path: the browser sends the current incoming draft and approved evidence only after explicit consent; the server stores approved evidence rows in ClickHouse and asks Gemini for structured, evidence-cited findings. The local checker remains available offline and is the default review path.
+
+Each cloud review returns `analysis_version: continuity-crew-v2`. Unsupported Gemini findings without a valid ClickHouse evidence index are excluded before the response reaches the UI. Repair options remain backward-compatible strings in `repair_options`, with richer ranked objects in `repair_plan` and aggregate `metrics` for downstream UI or evaluation.
 
 ## Submission/runtime notes
 
