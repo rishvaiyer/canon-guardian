@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#090a0c" />
+    <title>Canon Guardian — The Last Loop</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="sidebar">
+        <a class="brand" href="#top" aria-label="Canon Guardian home">
+          <span class="brand-mark">CG</span>
+          <span>canon<br />guardian</span>
+        </a>
+
+        <nav aria-label="Project navigation">
+          <a class="nav-item active" href="#review"><span>01</span> Review room</a>
+          <a class="nav-item" href="#canon"><span>02</span> Canon ledger</a>
+          <a class="nav-item" href="#downstream"><span>03</span> Impact map</a>
+        </nav>
+
+        <div class="project-card">
+          <p class="eyebrow">ACTIVE PROJECT</p>
+          <h2>The Last Loop</h2>
+          <p>Draft 4 · 10 pages</p>
+          <div class="project-stats"><span>26 canon facts</span><span>4 characters</span></div>
+        </div>
+
+        <p class="privacy-note"><span class="lock">⌁</span> Demo data only. No screenplay is sent anywhere in this MVP.</p>
+      </aside>
+
+      <section class="workspace" id="top">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">CANON INTELLIGENCE / REVISION REVIEW</p>
+            <h1>Your story remembers <em>everything.</em></h1>
+          </div>
+          <button class="primary-button" id="run-analysis"><span class="spark">✦</span> Run canon analysis</button>
+        </header>
+
+        <section class="status-strip" aria-live="polite">
+          <span class="pulse"></span>
+          <span id="analysis-status">Canon agent is ready to compare Revision 4 against the locked story ledger.</span>
+          <span class="status-meta" id="status-meta">26 facts indexed · 0 checks running</span>
+        </section>
+
+        <div class="hero-grid" id="review">
+          <section class="scene-panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">INCOMING REVISION</p>
+                <h2>Scene 19 — <em>The Locker</em></h2>
+              </div>
+              <span class="page-chip">PAGES 8–9</span>
+            </div>
+
+            <article class="script-paper" aria-label="Revised screenplay excerpt">
+              <p class="slug">INT. UNION STATION — LOCKERS — 11:37 P.M.</p>
+              <p>MAYA hurries through the empty concourse. Her left wrist is wrapped in a blood-stained scarf.</p>
+              <p>She reaches locker 441, keys in <mark class="claim claim-code" data-issue="code">1-9-8-7</mark>, and pulls the door open.</p>
+              <p>Inside: a burner phone. Maya lifts it. The screen wakes.</p>
+              <p class="character">MAYA</p>
+              <p class="dialogue">Jonah? I found your phone. Meet me outside.</p>
+              <p>She texts with her <mark class="claim claim-wrist" data-issue="wrist">injured left hand</mark>. A moment later, <mark class="claim claim-jonah" data-issue="jonah">JONAH enters from the street</mark>, alive.</p>
+            </article>
+
+            <div class="scene-footer">
+              <span><i></i> 4 new claims extracted</span>
+              <button class="text-button" id="show-ledger">View supporting canon ↗</button>
+            </div>
+          </section>
+
+          <section class="agent-panel" id="canon">
+            <div class="section-heading compact">
+              <div>
+                <p class="eyebrow">CANON COPILOT</p>
+                <h2>What changed?</h2>
+              </div>
+              <span class="agent-orb" aria-label="Agent online"></span>
+            </div>
+
+            <div class="agent-response" id="agent-response">
+              <span class="response-kicker">AWAITING REVIEW</span>
+              <p>I'll extract this scene’s story claims, compare them to locked facts, then trace every later beat that stops making sense.</p>
+            </div>
+
+            <div class="fact-list" aria-label="Locked canon facts">
+              <button class="fact" data-issue="code"><span class="fact-index">01</span><span><b>Locker code is unknown</b><small>Maya learns 1987 in Scene 23, 11:42 P.M.</small></span><span class="fact-arrow">↗</span></button>
+              <button class="fact" data-issue="phone"><span class="fact-index">02</span><span><b>Jonah's phone is dead</b><small>Battery dies on-page in Scene 14.</small></span><span class="fact-arrow">↗</span></button>
+              <button class="fact" data-issue="wrist"><span class="fact-index">03</span><span><b>Left wrist is unusable</b><small>Fracture established in Scene 11.</small></span><span class="fact-arrow">↗</span></button>
+              <button class="fact" data-issue="jonah"><span class="fact-index">04</span><span><b>Jonah is already dead</b><small>Death witnessed in Scene 7, 11:21 P.M.</small></span><span class="fact-arrow">↗</span></button>
+            </div>
+          </section>
+        </div>
+
+        <section class="impact-section" id="downstream">
+          <div class="impact-head">
+            <div>
+              <p class="eyebrow">DOWNSTREAM LOGIC</p>
+              <h2>What stops making sense <em>after this?</em></h2>
+            </div>
+            <div class="impact-legend"><span class="legend-dot selected"></span> selected break <span class="legend-dot"></span> affected beat</div>
+          </div>
+
+          <div class="impact-layout">
+            <div class="issues" id="issues" aria-label="Detected canon breaks"></div>
+            <div class="impact-canvas" aria-live="polite">
+              <div class="canvas-grid"></div>
+              <div class="impact-copy" id="impact-copy"></div>
+              <div class="impact-nodes" id="impact-nodes"></div>
+              <svg class="impact-lines" id="impact-lines" aria-hidden="true"></svg>
+            </div>
+          </div>
+        </section>
+      </section>
+    </main>
+    <script src="app.js"></script>
+  </body>
+</html>

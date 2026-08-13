@@ -1,0 +1,10 @@
+{
+  "name": "canon-guardian",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Evidence-backed story canon intelligence for screenplays.",
+  "scripts": {
+    "check": "node --check app.js",
+    "start": "python3 -m http.server 4173"
+  }
+}
