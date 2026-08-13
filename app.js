@@ -69,6 +69,11 @@ const dropZone = document.querySelector('#drop-zone');
 const importQueue = document.querySelector('#import-queue');
 const importError = document.querySelector('#import-error');
 const importRole = document.querySelector('#import-role');
+const importSeriesTitle = document.querySelector('#import-series-title');
+const importSeason = document.querySelector('#import-season');
+const importEpisode = document.querySelector('#import-episode');
+const importChapter = document.querySelector('#import-chapter');
+const importVersion = document.querySelector('#import-version');
 const cloudDialog = document.querySelector('#cloud-dialog');
 const cloudConsent = document.querySelector('#cloud-consent');
 const cloudError = document.querySelector('#cloud-error');
@@ -97,6 +102,7 @@ const atlasExpand = document.querySelector('#atlas-expand');
 const aiReadiness = document.querySelector('#ai-readiness');
 const aiNextStep = document.querySelector('#ai-next-step');
 const workflowRail = document.querySelector('#workflow-rail');
+const seriesTimelineList = document.querySelector('#series-timeline-list');
 const canonAiDialog = document.querySelector('#canon-ai-dialog');
 const canonAiConsent = document.querySelector('#canon-ai-consent');
 const canonAiReadiness = document.querySelector('#canon-ai-readiness');
@@ -138,15 +144,35 @@ function cleanName(value) {
 }
 
 function sourceRef(line) {
-  return `${line.file} · ${line.sceneLabel} · excerpt ${line.lineNumber}`;
+  const edition = line.seriesMeta?.label ? ` · ${line.seriesMeta.label}` : '';
+  return `${line.file} · ${line.sceneLabel} · excerpt ${line.lineNumber}${edition}`;
 }
 
 function factId(fact) {
   return `${fact.type}|${fact.label}|${fact.line.file}|${fact.line.lineNumber}`;
 }
 
-function storedFact(fact) {
-  return { id: factId(fact), type: fact.type, label: fact.label, detail: fact.detail, line: { ...fact.line }, origin: fact.origin || 'local', locked: false };
+function storedFact(fact, seriesMeta = null) {
+  return { id: factId(fact), type: fact.type, label: fact.label, detail: fact.detail, line: { ...fact.line, ...(seriesMeta ? { seriesMeta } : {}) }, origin: fact.origin || 'local', locked: false };
+}
+
+function readImportSeriesMeta(file) {
+  const title = importSeriesTitle.value.trim() || projectLedger.title || file.name.replace(/\.[^.]+$/, '');
+  const season = importSeason.value.trim();
+  const episode = importEpisode.value.trim();
+  const chapter = importChapter.value.trim();
+  const version = importVersion.value.trim();
+  const placement = [season ? `S${season}` : '', episode ? `E${episode}` : '', chapter].filter(Boolean).join(' · ');
+  return { title, season: season ? Number(season) : null, episode: episode ? Number(episode) : null, chapter, version, label: [placement, version].filter(Boolean).join(' / ') || 'Unnumbered source' };
+}
+
+function sourceSort(left, right) {
+  return (Number(left.season || 999) - Number(right.season || 999)) || (Number(left.episode || 999) - Number(right.episode || 999)) || (Number(left.addedAt || 0) - Number(right.addedAt || 0));
+}
+
+function sourceLabel(source) {
+  const placement = [source.season ? `S${source.season}` : '', source.episode ? `E${source.episode}` : '', source.chapter].filter(Boolean).join(' · ');
+  return [placement, source.version].filter(Boolean).join(' / ') || 'Unnumbered source';
 }
 
 function readProjectLedger() {
@@ -162,9 +188,9 @@ function saveProjectLedger() {
   try { localStorage.setItem(projectStorageKey, JSON.stringify(projectLedger)); } catch { /* Browser storage can be unavailable or full. */ }
 }
 
-function mergeFactsIntoLedger(facts) {
+function mergeFactsIntoLedger(facts, seriesMeta = null) {
   facts.forEach((fact) => {
-    const candidate = storedFact(fact);
+    const candidate = storedFact(fact, seriesMeta);
     if (!projectLedger.facts.some((saved) => saved.id === candidate.id)) projectLedger.facts.push(candidate);
   });
 }
@@ -186,7 +212,17 @@ function renderSeriesLibrary() {
     return;
   }
   clearProject.hidden = false;
-  seriesLibrary.innerHTML = `<div><b>${projectLedger.sources.length} ${projectLedger.sources.length === 1 ? 'source' : 'sources'} · ${locked} locked</b></div>${projectLedger.sources.slice(-3).reverse().map((source) => `<div class="series-source"><span>${escapeHtml(source.name)}</span><b>${source.role === 'revision' ? 'REVISION' : 'CANON'}</b></div>`).join('')}`;
+  seriesLibrary.innerHTML = `<div><b>${projectLedger.sources.length} ${projectLedger.sources.length === 1 ? 'source' : 'sources'} · ${locked} locked</b></div>${[...projectLedger.sources].sort(sourceSort).slice(-3).reverse().map((source) => `<div class="series-source"><span>${escapeHtml(sourceLabel(source))}</span><b>${source.role === 'revision' ? 'REVISION' : 'CANON'}</b></div>`).join('')}`;
+}
+
+function renderSeriesTimeline() {
+  if (!seriesTimelineList) return;
+  if (!projectLedger.sources.length) {
+    seriesTimelineList.innerHTML = '<div class="timeline-empty"><b>Your story timeline is empty.</b><span>Add a canon chapter or episode to start building the ledger.</span></div>';
+    return;
+  }
+  const sorted = [...projectLedger.sources].sort(sourceSort);
+  seriesTimelineList.innerHTML = sorted.map((source, index) => `<article class="timeline-item ${source.role === 'revision' ? 'revision' : 'canon'}"><span class="timeline-index">${String(index + 1).padStart(2, '0')}</span><div class="timeline-marker" aria-hidden="true"></div><div class="timeline-body"><div class="timeline-topline"><span class="timeline-kind">${source.role === 'revision' ? 'INCOMING REVISION' : 'CANON SOURCE'}</span><span>${escapeHtml(sourceLabel(source))}</span></div><h3>${escapeHtml(source.name)}</h3><p>${source.scenes || source.pages || 'Indexed'} ${source.scenes ? (source.scenes === 1 ? 'scene' : 'scenes') : source.pages ? (source.pages === 1 ? 'page' : 'pages') : 'units'} · ${source.role === 'revision' ? 'test this version against locked facts' : 'facts can be approved into canon'}</p></div></article>`).join('');
 }
 
 function renderLedgerFacts() {
@@ -225,6 +261,7 @@ function refreshSavedProject() {
     updatePrivacyNote(projectLedger.sources.length);
   }
   renderSeriesLibrary();
+  renderSeriesTimeline();
   renderLedgerFacts();
   renderWorkflow();
 }
@@ -1193,11 +1230,12 @@ async function buildStoryMemory() {
     sourcePdfPageLineCounts = pdfEntry?.pageLineCounts || [];
     storyMemory = buildLocalStoryMemory(extracted);
     currentImportRole = importRole.value;
-    if (!projectLedger.title || currentImportRole === 'canon') projectLedger.title = primaryFile.name.replace(/\.[^.]+$/, '');
-    projectLedger.sources.push(...extracted.map((entry) => ({ name: entry.file.name, role: currentImportRole, scenes: entry.scenes, pages: entry.pages, addedAt: Date.now() })));
-    if (currentImportRole === 'canon') mergeFactsIntoLedger(storyMemory.facts);
+    const seriesMeta = readImportSeriesMeta(primaryFile);
+    if (!projectLedger.title || currentImportRole === 'canon') projectLedger.title = seriesMeta.title;
+    projectLedger.sources.push(...extracted.map((entry) => ({ name: entry.file.name, role: currentImportRole, scenes: entry.scenes, pages: entry.pages, addedAt: Date.now(), ...seriesMeta })));
+    if (currentImportRole === 'canon') mergeFactsIntoLedger(storyMemory.facts, seriesMeta);
     saveProjectLedger();
-    projectTitle.textContent = primaryFile.name.replace(/\.[^.]+$/, '');
+    projectTitle.textContent = seriesMeta.title;
     projectMeta.textContent = `${currentImportRole === 'revision' ? 'Revision' : 'Canon'} · ${totalScenes || totalPages || 'story'} ${totalScenes === 1 ? 'scene' : totalScenes ? 'scenes' : totalPages === 1 ? 'page' : totalPages ? 'pages' : 'indexed'}`;
     stagedFiles = [];
     refreshSavedProject();

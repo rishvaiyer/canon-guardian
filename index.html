@@ -23,6 +23,7 @@
           <a class="nav-item" href="#canon"><span>02</span> Canon ledger</a>
           <a class="nav-item" href="#downstream"><span>03</span> Impact map</a>
           <a class="nav-item" href="#story-map"><span>04</span> Story graph</a>
+          <a class="nav-item" href="#series"><span>05</span> Series timeline</a>
         </nav>
 
         <div class="project-card">
@@ -60,6 +61,17 @@
           <span class="status-meta" id="status-meta">26 facts indexed · 0 checks running</span>
         </section>
         <section class="workflow-rail" id="workflow-rail" aria-label="Story workflow"></section>
+
+        <section class="series-timeline" id="series">
+          <div class="impact-head">
+            <div>
+              <p class="eyebrow">LIVING STORY BIBLE</p>
+              <h2>Build it <em>chapter by chapter.</em></h2>
+            </div>
+            <span class="timeline-note">Canon stays approved. Revisions stay testable.</span>
+          </div>
+          <div class="timeline-list" id="series-timeline-list" aria-live="polite"></div>
+        </section>
 
         <div class="hero-grid" id="review">
           <section class="scene-panel">
@@ -173,6 +185,14 @@
         <h2 id="import-title">Add the pages that make this world <em>true.</em></h2>
         <p class="import-intro">Add a manuscript chapter, screenplay, teleplay, episode, play, treatment, or outline. Build canon first, then compare the next draft against it.</p>
         <label class="import-role" for="import-role"><span>THIS IMPORT IS</span><select id="import-role"><option value="canon">Canon source — add facts to the story bible</option><option value="revision">Incoming draft — compare against locked canon</option></select></label>
+        <div class="series-fields" aria-label="Series placement">
+          <label><span>SERIES TITLE</span><input id="import-series-title" maxlength="120" placeholder="The Last Loop" /></label>
+          <label><span>SEASON</span><input id="import-season" inputmode="numeric" type="number" min="1" max="99" placeholder="1" /></label>
+          <label><span>EPISODE</span><input id="import-episode" inputmode="numeric" type="number" min="1" max="999" placeholder="1" /></label>
+          <label><span>CHAPTER / BEAT</span><input id="import-chapter" maxlength="100" placeholder="The Locker" /></label>
+          <label><span>VERSION</span><input id="import-version" maxlength="60" placeholder="Draft 1" /></label>
+        </div>
+        <p class="series-field-help">These labels become the source’s permanent place in your local story timeline.</p>
         <label class="drop-zone" id="drop-zone" for="script-upload">
           <input id="script-upload" type="file" accept=".txt,.fountain,.fdx,.pdf,.docx" multiple />
           <span class="upload-icon">↥</span>
