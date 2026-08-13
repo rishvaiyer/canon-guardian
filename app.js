@@ -204,7 +204,7 @@ function renderWorkflow() {
     { number: '03', title: 'Approve canon', detail: locks ? `${locks} fact${locks === 1 ? '' : 's'} locked` : 'Keep only what must stay true', done: locks > 0, action: 'lock', cta: 'Lock fact' },
     { number: '04', title: 'Compare revision', detail: revisions ? `${revisions} revision${revisions === 1 ? '' : 's'} indexed` : 'Bring in the changed pages', done: revisions > 0, action: 'revision', cta: 'Add revision' }
   ];
-  workflowRail.innerHTML = steps.map((step) => `<div class="workflow-step ${step.done ? 'done' : ''}"><span>${step.number}</span><div><b>${step.title}</b><small>${step.detail}</small></div><button class="text-button" data-workflow-action="${step.action}" type="button">${step.action === 'canon' || (step.action === 'candidates' && !step.done) ? step.cta : 'View'} ↗</button></div>`).join('');
+  workflowRail.innerHTML = steps.map((step) => `<div class="workflow-step ${step.done ? 'done' : ''}"><span>${step.number}</span><div><b>${step.title}</b><small>${step.detail}</small></div><button class="text-button" data-workflow-action="${step.action}" type="button">${step.done && step.action !== 'canon' ? 'View' : step.cta} ↗</button></div>`).join('');
 }
 
 function refreshSavedProject() {
