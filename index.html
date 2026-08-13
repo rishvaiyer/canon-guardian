@@ -22,6 +22,7 @@
           <a class="nav-item active" href="#review" aria-current="page"><span>01</span> Review room</a>
           <a class="nav-item" href="#canon"><span>02</span> Canon ledger</a>
           <a class="nav-item" href="#downstream"><span>03</span> Impact map</a>
+          <a class="nav-item" href="#story-map"><span>04</span> Story graph</a>
         </nav>
 
         <div class="project-card">
@@ -120,6 +121,22 @@
               <svg class="impact-lines" id="impact-lines" aria-hidden="true"></svg>
             </div>
           </div>
+        </section>
+
+        <section class="story-map-section" id="story-map">
+          <div class="impact-head">
+            <div>
+              <p class="eyebrow">WHOLE SCRIPT VIEW</p>
+              <h2>Your story, <em>connected.</em></h2>
+            </div>
+            <div class="graph-legend"><span class="legend-line order"></span> scene order <span class="legend-line character"></span> shared character</div>
+          </div>
+          <div class="story-graph-panel" aria-live="polite">
+            <svg class="story-graph-lines" id="story-graph-lines" viewBox="0 0 1000 560" preserveAspectRatio="none" aria-hidden="true"></svg>
+            <div class="story-graph-nodes" id="story-graph-nodes"></div>
+            <div class="story-graph-detail" id="story-graph-detail"></div>
+          </div>
+          <p class="graph-note" id="story-graph-note">The sample graph links the fixed events that drive The Last Loop. Import a script to map every detected scene.</p>
         </section>
       </section>
     </main>

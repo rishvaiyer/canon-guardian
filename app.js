@@ -73,7 +73,12 @@ const projectMeta = document.querySelector('#project-meta');
 const canonCount = document.querySelector('#canon-count');
 const fileCount = document.querySelector('#file-count');
 const privacyNote = document.querySelector('#privacy-note');
+const storyGraphNodes = document.querySelector('#story-graph-nodes');
+const storyGraphLines = document.querySelector('#story-graph-lines');
+const storyGraphDetail = document.querySelector('#story-graph-detail');
+const storyGraphNote = document.querySelector('#story-graph-note');
 let activeKey = 'code';
+let activeGraphNode = 0;
 let stagedFiles = [];
 let storyMemory = null;
 
@@ -233,6 +238,83 @@ function renderImportedFacts(memory) {
     return;
   }
   factRoot.innerHTML = cards.map((fact, index) => `<div class="fact"><span class="fact-index">${String(index + 1).padStart(2, '0')}</span><span><b>${escapeHtml(fact.label)}</b><small>${escapeHtml(fact.detail)} · ${escapeHtml(sourceRef(fact.line))}</small></span><span class="fact-arrow">⌁</span></div>`).join('');
+}
+
+function deriveStoryGraph(memory) {
+  if (!memory) return [
+    { label: 'Scene 7', title: 'Jonah dies', characters: ['MAYA', 'JONAH'], excerpt: 'The fixed point of the loop.' },
+    { label: 'Scene 11', title: 'Maya fractures her wrist', characters: ['MAYA'], excerpt: 'A physical constraint is established.' },
+    { label: 'Scene 14', title: 'The phone dies', characters: ['MAYA', 'JONAH'], excerpt: 'The last signal becomes a clue.' },
+    { label: 'Scene 19', title: 'The Locker', characters: ['MAYA', 'JONAH'], excerpt: 'The incoming revision under review.' },
+    { label: 'Scene 23', title: 'Voice memo reveal', characters: ['MAYA'], excerpt: 'The locker code is finally learned.' },
+    { label: 'Scene 28', title: 'Final choice', characters: ['MAYA', 'JONAH'], excerpt: 'Maya accepts she cannot save him.' }
+  ];
+  const graphCharacters = new Set(memory.characters);
+  memory.facts.forEach((fact) => {
+    const name = fact.label.match(/^([A-Z][A-Z' -]{1,34})\s+is dead$/i)?.[1];
+    if (name) graphCharacters.add(cleanName(name));
+  });
+  memory.lines.forEach((line) => (line.text.match(/\b[A-Z]{2,}(?:\s+[A-Z]{2,})?\b/g) || []).forEach((name) => {
+    const cleaned = cleanName(name);
+    if (cleaned.length > 1 && !ignoredSpeakers.has(cleaned)) graphCharacters.add(cleaned);
+  }));
+  const buckets = new Map();
+  memory.lines.forEach((line) => {
+    const key = line.sceneNumber ? line.sceneLabel : `Beat ${Math.floor((line.lineNumber - 1) / 12) + 1}`;
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(line);
+  });
+  return [...buckets.entries()].slice(0, 36).map(([label, lines], index) => {
+    const text = lines.map((line) => line.text).join(' ');
+    const characters = [...graphCharacters].filter((character) => lineHasCharacter({ text }, character)).slice(0, 3);
+    return {
+      label: label.startsWith('Scene ') ? label.split(':')[0] : label,
+      title: cleanExcerpt(lines[0].text, 42),
+      characters,
+      excerpt: cleanExcerpt(text, 132),
+      index
+    };
+  });
+}
+
+function graphPosition(index, total) {
+  if (total === 1) return [50, 52];
+  if (total > 10) {
+    const columns = 6;
+    const rows = Math.ceil(total / columns);
+    return [13 + ((index % columns) * 14.8), 17 + (Math.floor(index / columns) * (66 / Math.max(1, rows - 1)))];
+  }
+  const angle = (-Math.PI / 2) + ((Math.PI * 2 * index) / total);
+  const radiusX = 34;
+  const radiusY = 35;
+  return [50 + (Math.cos(angle) * radiusX), 51 + (Math.sin(angle) * radiusY)];
+}
+
+function renderStoryGraph(memory) {
+  const nodes = deriveStoryGraph(memory);
+  const positions = nodes.map((_, index) => graphPosition(index, nodes.length));
+  activeGraphNode = Math.min(activeGraphNode, Math.max(0, nodes.length - 1));
+  const toPoint = ([x, y]) => [x * 10, y * 5.6];
+  const edgeLines = nodes.slice(1).map((_, index) => {
+    const [x1, y1] = toPoint(positions[index]);
+    const [x2, y2] = toPoint(positions[index + 1]);
+    return `<line class="graph-edge order" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" />`;
+  });
+  const threadLines = [];
+  nodes.forEach((node, index) => nodes.slice(index + 2).forEach((later, offset) => {
+    if (!node.characters.some((character) => later.characters.includes(character))) return;
+    const target = index + offset + 2;
+    const [x1, y1] = toPoint(positions[index]);
+    const [x2, y2] = toPoint(positions[target]);
+    threadLines.push(`<line class="graph-edge character" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" />`);
+  }));
+  storyGraphLines.innerHTML = `${edgeLines.join('')}${threadLines.slice(0, 36).join('')}`;
+  storyGraphNodes.innerHTML = nodes.map((node, index) => `<button class="story-node ${index === activeGraphNode ? 'active' : ''}" data-graph-node="${index}" style="left:${positions[index][0]}%;top:${positions[index][1]}%"><span>${escapeHtml(node.label)}</span><b>${escapeHtml(node.title)}</b>${node.characters.length ? `<small>${escapeHtml(node.characters.join(' · '))}</small>` : ''}</button>`).join('');
+  const selected = nodes[activeGraphNode];
+  storyGraphDetail.innerHTML = `<p class="eyebrow">${escapeHtml(selected.label)} / ${memory ? 'IMPORTED SOURCE' : 'SAMPLE PROJECT'}</p><h3>${escapeHtml(selected.title)}</h3><p>${escapeHtml(selected.excerpt)}</p><span>${selected.characters.length ? `${escapeHtml(selected.characters.join(' · '))} thread` : 'No named character thread extracted'}</span>`;
+  storyGraphNote.textContent = memory
+    ? `${nodes.length} ${nodes.length === 1 ? 'scene or beat' : 'scenes or beats'} mapped from imported pages. Click a node to inspect its local thread.`
+    : 'The sample graph links the fixed events that drive The Last Loop. Import a script to map every detected scene.';
 }
 
 function updatePrivacyNote(sourceCount) {
@@ -422,6 +504,7 @@ async function buildStoryMemory() {
     statusMeta.textContent = `${totalScenes || totalPages || storyMemory.lines.length} scenes or lines ready · local-only`;
     stagedFiles = extracted;
     renderImportedFacts(storyMemory);
+    renderStoryGraph(storyMemory);
     renderImportQueue();
     importDialog.close();
   } catch (error) {
@@ -465,4 +548,12 @@ document.querySelectorAll('.nav-item').forEach((link) => link.addEventListener('
   });
 }));
 
+storyGraphNodes.addEventListener('click', (event) => {
+  const node = event.target.closest('[data-graph-node]');
+  if (!node) return;
+  activeGraphNode = Number(node.dataset.graphNode);
+  renderStoryGraph(storyMemory);
+});
+
 renderImpact(activeKey);
+renderStoryGraph();
