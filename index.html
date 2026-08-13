@@ -48,10 +48,11 @@
           <div class="top-actions">
             <button class="theme-button" id="theme-toggle" type="button" aria-pressed="false" title="Switch to light mode"><span aria-hidden="true">☼</span> Light</button>
             <button class="secondary-button" id="open-upload">+ Add pages</button>
-            <button class="secondary-button cloud-button" id="open-canon-ai" type="button"><span class="spark">✦</span> Generate canon</button>
-            <button class="secondary-button cloud-button" id="open-canon-ask" type="button"><span class="spark">✦</span> Ask the canon</button>
-            <button class="secondary-button cloud-button" id="open-cloud-review" type="button"><span class="spark">✦</span> Run continuity crew</button>
+            <button class="secondary-button cloud-button" id="open-canon-ai" type="button"><span class="spark">✦</span> Find canon candidates</button>
+            <button class="secondary-button cloud-button" id="open-canon-ask" type="button"><span class="spark">✦</span> Ask locked canon</button>
+            <button class="secondary-button cloud-button" id="open-cloud-review" type="button"><span class="spark">✦</span> Deep cloud review</button>
             <button class="primary-button" id="run-analysis"><span class="spark">✦</span> Check continuity</button>
+            <button class="secondary-button" id="open-exports" type="button">Download outputs</button>
             <button class="secondary-button download-button" id="download-annotated" type="button" hidden>Download annotated PDF</button>
           </div>
         </header>
@@ -261,6 +262,17 @@
         <p class="import-error" id="manual-fact-error" role="alert" hidden></p>
         <div class="import-footer"><span><i></i> Saved locally as an approved lock.</span><button class="primary-button" type="submit">Lock this fact</button></div>
       </form>
+    </dialog>
+    <dialog class="import-dialog export-dialog" id="export-dialog" aria-labelledby="export-title">
+      <div class="dialog-topline"><span>LOCAL WORK / EXPORT CENTER</span><button class="close-dialog" id="close-exports" aria-label="Close downloads">×</button></div>
+      <div class="import-content">
+        <p class="eyebrow">YOUR WORK, PORTABLE</p>
+        <h2 id="export-title">Download every useful <em>output.</em></h2>
+        <p class="import-intro">CanonCue keeps the screenplay local. Export the evidence, decisions, map, review, and project bundle whenever you need to share or archive them.</p>
+        <div class="export-list" id="export-list" aria-live="polite"></div>
+        <p class="import-error" id="export-error" role="alert" hidden></p>
+        <div class="import-footer"><span><i></i> Exports are created in your browser.</span><button class="primary-button" id="download-all-outputs" type="button">Download all outputs</button></div>
+      </div>
     </dialog>
     <script type="module" src="theme.js"></script>
     <script type="module" src="app.js"></script>

@@ -61,3 +61,5 @@ body[data-theme="light"] .sidebar,body[data-theme="light"] .issues { background:
 .graph-edge-label { paint-order:stroke; stroke:#171b18; stroke-width:5px; text-anchor:middle; font:700 7px "JetBrains Mono",monospace; letter-spacing:.08em; }
 .graph-edge-label.order { fill:var(--accent); }
 .graph-edge-label.character { fill:var(--sage); }
+.export-list { display:grid; gap:8px; margin-top:18px; }.export-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px; border:1px solid var(--line); border-radius:6px; background:var(--surface-soft); }.export-row-copy { min-width:0; }.export-row-copy b,.export-row-copy small { display:block; }.export-row-copy b { color:var(--ink); font-size:11px; }.export-row-copy small { margin-top:3px; color:var(--subtle); font-size:9px; line-height:1.4; }.export-row button { flex:0 0 auto; }.export-row[aria-disabled="true"] { opacity:.48; }.export-row[aria-disabled="true"] button { pointer-events:none; }
+@media (max-width:690px) { .export-row { align-items:flex-start; flex-direction:column; }.export-row button { width:100%; } }

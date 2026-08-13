@@ -119,6 +119,10 @@ const canonAskReadiness = document.querySelector('#canon-ask-readiness');
 const canonAskError = document.querySelector('#canon-ask-error');
 const canonAskButton = document.querySelector('#run-canon-ask');
 const downloadAnnotated = document.querySelector('#download-annotated');
+const exportDialog = document.querySelector('#export-dialog');
+const exportList = document.querySelector('#export-list');
+const exportError = document.querySelector('#export-error');
+const downloadAllOutputs = document.querySelector('#download-all-outputs');
 let activeKey = 'code';
 let activeGraphNode = 0;
 let activeCharacter = 'ALL';
@@ -130,7 +134,10 @@ let currentImportRole = 'canon';
 let cloudConfigured = null;
 let sourcePdfFile = null;
 let sourcePdfPageLineCounts = [];
+let sourcePdfPageLineTexts = [];
+let sourcePdfPageLineYPositions = [];
 let currentAnnotations = [];
+let importedFiles = [];
 const projectStorageKey = 'story-is-straight-project-v3';
 let projectLedger = { title: '', sources: [], facts: [] };
 
@@ -257,6 +264,14 @@ function renderWorkflow() {
     { number: '04', title: 'Compare revision', detail: revisions ? `${revisions} revision${revisions === 1 ? '' : 's'} indexed` : 'Bring in the changed pages', done: revisions > 0, action: 'revision', cta: 'Add revision' }
   ];
   workflowRail.innerHTML = steps.map((step) => `<div class="workflow-step ${step.done ? 'done' : ''}"><span>${step.number}</span><div><b>${step.title}</b><small>${step.detail}</small></div><button class="text-button" data-workflow-action="${step.action}" type="button">${step.done && step.action !== 'canon' ? 'View' : step.cta} ↗</button></div>`).join('');
+  const uploadAction = document.querySelector('#open-upload');
+  const canonAiLauncher = document.querySelector('#open-canon-ai');
+  const canonAskLauncher = document.querySelector('#open-canon-ask');
+  const cloudReviewLauncher = document.querySelector('#open-cloud-review');
+  if (uploadAction) uploadAction.textContent = !canonSources ? 'Start with canon' : currentImportRole === 'canon' ? 'Add revision' : 'Add pages';
+  if (canonAiLauncher) canonAiLauncher.hidden = !canonOpenNow;
+  if (canonAskLauncher) canonAskLauncher.hidden = locks === 0;
+  if (cloudReviewLauncher) cloudReviewLauncher.hidden = !(locks > 0 && revisions > 0 && currentImportRole === 'revision');
 }
 
 function renderReopenSourceNotice() {
@@ -334,21 +349,27 @@ function buildLocalStoryMemory(files) {
       }
       if (sceneNumber && isLikelySpeaker(text)) characters.add(cleanName(text));
       let pageNumber = 0;
+      let pageIndex = -1;
+      let pageLineIndex = -1;
       let pageY = 0;
       if (pageLineCounts.length) {
         let consumed = 0;
-        const pageIndex = pageLineCounts.findIndex((count) => {
+        pageIndex = pageLineCounts.findIndex((count) => {
           consumed += count;
           return lineNumber < consumed;
         });
+        pageLineIndex = lineNumber - (consumed - pageLineCounts[pageIndex]);
         pageNumber = pageIndex + 1;
-        pageY = entry.pageLineYPositions?.[pageIndex]?.[lineNumber - (consumed - pageLineCounts[pageIndex])];
+        pageY = entry.pageLineYPositions?.[pageIndex]?.[pageLineIndex];
       }
       lines.push({
         text,
         file: entry.file.name,
         lineNumber: lineNumber + 1,
         pageNumber,
+        pageIndex,
+        pageLineIndex,
+        pageLineText: entry.pageLineTexts?.[pageIndex]?.[pageLineIndex] || text,
         pageY,
         index: sourceOrder++,
         sceneNumber,
@@ -1222,8 +1243,24 @@ function drawPdfWrapped(page, text, x, y, width, font, size, color = rgb(0.15, 0
   return cursor;
 }
 
+function normalizePdfEvidenceText(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
 function linePageAndPosition(line, pageCount) {
   if (!sourcePdfPageLineCounts.length) return { pageIndex: 0, lineWithinPage: 3 };
+  const preferredPage = Number.isInteger(line.pageIndex) && line.pageIndex >= 0 ? line.pageIndex : Math.max(0, (line.pageNumber || 1) - 1);
+  const pagesToCheck = [preferredPage, ...sourcePdfPageLineTexts.map((_, index) => index).filter((index) => index !== preferredPage)];
+  const target = normalizePdfEvidenceText(line.text);
+  for (const pageIndex of pagesToCheck) {
+    const pageLines = sourcePdfPageLineTexts[pageIndex] || [];
+    const exactIndex = pageLines.findIndex((candidate) => normalizePdfEvidenceText(candidate) === target);
+    const fuzzyIndex = exactIndex >= 0 ? exactIndex : pageLines.findIndex((candidate) => {
+      const normalized = normalizePdfEvidenceText(candidate);
+      return normalized && target && (normalized.includes(target) || target.includes(normalized));
+    });
+    if (fuzzyIndex >= 0) return { pageIndex: Math.min(pageIndex, pageCount - 1), lineWithinPage: fuzzyIndex, pageY: sourcePdfPageLineYPositions[pageIndex]?.[fuzzyIndex] };
+  }
   let consumed = 0;
   for (let index = 0; index < sourcePdfPageLineCounts.length; index += 1) {
     const count = sourcePdfPageLineCounts[index];
@@ -1233,6 +1270,83 @@ function linePageAndPosition(line, pageCount) {
     consumed += count;
   }
   return { pageIndex: pageCount - 1, lineWithinPage: 3 };
+}
+
+function exportFileName(value, fallback = 'canoncue-export') {
+  return String(value || fallback).replace(/[^a-z0-9._-]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || fallback;
+}
+
+function downloadLocalBlob(name, content, type) {
+  const blob = content instanceof Blob ? content : new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = name;
+  document.body.appendChild(link);
+  link.click();
+  setTimeout(() => { link.remove(); URL.revokeObjectURL(url); }, 1200);
+}
+
+function buildCanonMarkdown() {
+  const title = projectLedger.title || projectTitle.textContent || 'CanonCue project';
+  const locked = projectLedger.facts.filter((fact) => fact.locked);
+  const candidates = projectLedger.facts.filter((fact) => !fact.locked);
+  const sources = projectLedger.sources.map((source) => `- ${source.role === 'revision' ? 'Revision' : 'Canon'}: ${source.name} · ${sourceLabel(source)}`).join('\n') || '- No imported sources yet';
+  const renderFacts = (facts) => facts.length ? facts.map((fact, index) => `### ${index + 1}. ${fact.label}\n- Type: ${fact.type || 'story fact'}\n- Evidence: ${sourceRef(fact.line)}\n- Excerpt: “${fact.line.text}”\n- Note: ${fact.detail || 'Approved story state.'}`).join('\n\n') : '_None yet._';
+  return `# ${title} — CanonCue ledger\n\n> Get your story straight.\n\n## Sources\n${sources}\n\n## Approved canon\n\n${renderFacts(locked)}\n\n## Review candidates\n\n${renderFacts(candidates)}\n`;
+}
+
+function buildContinuityMarkdown() {
+  const title = projectLedger.title || projectTitle.textContent || 'CanonCue project';
+  const findings = Object.values(issues || {});
+  const body = findings.length ? findings.map((issue, index) => `## ${index + 1}. ${issue.title || 'Continuity finding'}\n- Severity: ${issue.severity || 'REVIEW'}\n- Summary: ${issue.summary || issue.copy || 'Review the cited evidence.'}\n- Evidence: ${issue.evidence || 'Source-backed review'}\n- Downstream: ${(issue.nodes || []).map((node) => node[1]).join(' → ') || 'Editorial review required'}\n- Repair options: ${(issue.repairOptions || []).join(' / ') || issue.smallestRepair || 'Choose the smallest safe edit.'}`).join('\n\n') : '_No findings are open._';
+  return `# ${title} — Continuity review\n\nGenerated locally by CanonCue. The original screenplay is unchanged.\n\n${body}\n`;
+}
+
+function buildStoryMapCsv() {
+  const rows = [['Scene', 'Title', 'Characters', 'Evidence', 'Excerpt']];
+  deriveStoryGraph(storyMemory).forEach((node) => rows.push([node.label, node.title, node.characters.join(' · '), nodeHasEvidence(node) ? 'yes' : 'no', node.excerpt]));
+  return rows.map((row) => row.map((value) => `"${String(value || '').replace(/"/g, '""')}"`).join(',')).join('\n') + '\n';
+}
+
+function buildProjectBundle() {
+  return JSON.stringify({ product: 'CanonCue', exportedAt: new Date().toISOString(), project: projectLedger, findings: issues, storyMap: deriveStoryGraph(storyMemory), privacy: 'Source text is not included after refresh; this bundle contains local ledger, findings, and map metadata.' }, null, 2);
+}
+
+function setExportError(message = '') {
+  if (!exportError) return;
+  exportError.hidden = !message;
+  exportError.textContent = message;
+}
+
+function renderExportList() {
+  if (!exportList) return;
+  const base = exportFileName(projectLedger.title || projectTitle.textContent);
+  const rows = [
+    ['bundle', 'Project bundle', 'JSON archive with ledger, findings, and story-map metadata.', `${base}-project.json`],
+    ['canon', 'Canon ledger', 'Approved locks, review candidates, sources, and evidence references.', `${base}-canon.md`],
+    ['review', 'Continuity review', 'Open findings, severity, downstream path, and repair options.', `${base}-continuity-review.md`],
+    ['map', 'Continuity map', 'Scene-by-scene CSV for spreadsheets, notes, or a writers-room handoff.', `${base}-continuity-map.csv`],
+    ['annotated', 'Annotated source PDF', sourcePdfFile && currentAnnotations.length ? 'Original PDF plus in-place evidence highlights and appendix.' : 'Available after a PDF revision produces findings.', `${base}-annotated.pdf`]
+  ];
+  const sourceRows = importedFiles.map((file, index) => [`source-${index}`, `Original source: ${file.name}`, 'Download the untouched local file you imported.', file.name]);
+  exportList.innerHTML = [...rows, ...sourceRows].map(([kind, title, detail, name]) => {
+    const unavailable = kind === 'annotated' && !(sourcePdfFile && currentAnnotations.length);
+    return `<div class="export-row" aria-disabled="${unavailable}"><span class="export-row-copy"><b>${escapeHtml(title)}</b><small>${escapeHtml(detail)} · ${escapeHtml(name)}</small></span><button class="text-button" type="button" data-export-kind="${escapeHtml(kind)}" ${unavailable ? 'disabled' : ''}>Download ↗</button></div>`;
+  }).join('');
+}
+
+async function runExport(kind) {
+  const base = exportFileName(projectLedger.title || projectTitle.textContent);
+  if (kind === 'bundle') downloadLocalBlob(`${base}-project.json`, buildProjectBundle(), 'application/json');
+  if (kind === 'canon') downloadLocalBlob(`${base}-canon.md`, buildCanonMarkdown(), 'text/markdown');
+  if (kind === 'review') downloadLocalBlob(`${base}-continuity-review.md`, buildContinuityMarkdown(), 'text/markdown');
+  if (kind === 'map') downloadLocalBlob(`${base}-continuity-map.csv`, buildStoryMapCsv(), 'text/csv');
+  if (kind === 'annotated') await downloadAnnotatedPdf();
+  if (kind.startsWith('source-')) {
+    const file = importedFiles[Number(kind.slice(7))];
+    if (file) downloadLocalBlob(file.name, await file.arrayBuffer(), file.type || 'application/octet-stream');
+  }
 }
 
 async function downloadAnnotatedPdf() {
@@ -1314,6 +1428,7 @@ async function extractPdf(file, onProgress) {
   const loadingTask = getDocument({ data: new Uint8Array(await file.arrayBuffer()) });
   const pdf = await loadingTask.promise;
   const pages = [];
+  const pageLineTexts = [];
   const pageLineYPositions = [];
   for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
     onProgress(`Reading ${file.name}: page ${pageNumber} of ${pdf.numPages}`);
@@ -1343,9 +1458,10 @@ async function extractPdf(file, onProgress) {
       lineYPositions.push(activeLineY);
     }
     pages.push(pageLines.join('\n'));
+    pageLineTexts.push(pageLines);
     pageLineYPositions.push(lineYPositions);
   }
-  return { text: pages.join('\n'), pages: pdf.numPages, pageLineCounts: pages.map((page) => page.split(/\r?\n/).length), pageLineYPositions };
+  return { text: pages.join('\n'), pages: pdf.numPages, pageLineTexts, pageLineCounts: pageLineTexts.map((page) => page.length), pageLineYPositions };
 }
 
 async function extractFdx(file) {
@@ -1389,10 +1505,13 @@ async function buildStoryMemory() {
     }
     const totalScenes = extracted.reduce((total, file) => total + file.scenes, 0);
     const totalPages = extracted.reduce((total, file) => total + file.pages, 0);
+    importedFiles = extracted.map((entry) => entry.file);
     const primaryFile = extracted[0].file;
     const pdfEntry = extracted.find((entry) => /\.pdf$/i.test(entry.file.name));
     sourcePdfFile = pdfEntry?.file || null;
     sourcePdfPageLineCounts = pdfEntry?.pageLineCounts || [];
+    sourcePdfPageLineTexts = pdfEntry?.pageLineTexts || [];
+    sourcePdfPageLineYPositions = pdfEntry?.pageLineYPositions || [];
     storyMemory = buildLocalStoryMemory(extracted);
     currentImportRole = importRole.value;
     const seriesMeta = readImportSeriesMeta(primaryFile);
@@ -1452,6 +1571,28 @@ cloudReviewButton.addEventListener('click', runCloudReview);
 canonAiButton.addEventListener('click', runCanonAi);
 canonAskButton.addEventListener('click', runCanonAsk);
 downloadAnnotated.addEventListener('click', downloadAnnotatedPdf);
+document.querySelector('#open-exports').addEventListener('click', () => { setExportError(); renderExportList(); exportDialog.showModal(); });
+document.querySelector('#close-exports').addEventListener('click', () => { setExportError(); exportDialog.close(); });
+exportList.addEventListener('click', async (event) => {
+  const button = event.target.closest('[data-export-kind]');
+  if (!button) return;
+  button.disabled = true;
+  try { await runExport(button.dataset.exportKind); } catch (error) { setExportError(`Could not create this export. ${error.message}`); } finally { button.disabled = false; }
+});
+downloadAllOutputs.addEventListener('click', async () => {
+  downloadAllOutputs.disabled = true;
+  setExportError();
+  try {
+    await runExport('bundle');
+    await runExport('canon');
+    await runExport('review');
+    await runExport('map');
+    if (sourcePdfFile && currentAnnotations.length) await runExport('annotated');
+    importedFiles.forEach((file, index) => { runExport(`source-${index}`); });
+    status.textContent = 'All available CanonCue outputs are downloading.';
+  } catch (error) { setExportError(`Could not create all exports. ${error.message}`); }
+  finally { downloadAllOutputs.disabled = false; }
+});
 aiNextStep.addEventListener('click', () => {
   const action = aiNextStep.dataset.aiAction;
   cloudDialog.close();
