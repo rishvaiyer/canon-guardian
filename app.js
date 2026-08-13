@@ -92,7 +92,7 @@ let activeGraphNode = 0;
 let stagedFiles = [];
 let storyMemory = null;
 let currentImportRole = 'canon';
-const projectStorageKey = 'story-is-straight-project-v2';
+const projectStorageKey = 'story-is-straight-project-v3';
 let projectLedger = { title: '', sources: [], facts: [] };
 
 const sceneHeadingPattern = /^(?:INT\.?|EXT\.?|INT\/EXT\.?|I\/E\.?)(?![A-Za-z])/i;
