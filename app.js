@@ -72,6 +72,7 @@ const projectTitle = document.querySelector('#project-title');
 const projectMeta = document.querySelector('#project-meta');
 const canonCount = document.querySelector('#canon-count');
 const fileCount = document.querySelector('#file-count');
+const privacyNote = document.querySelector('#privacy-note');
 let activeKey = 'code';
 let stagedFiles = [];
 let storyMemory = null;
@@ -234,6 +235,10 @@ function renderImportedFacts(memory) {
   factRoot.innerHTML = cards.map((fact, index) => `<div class="fact"><span class="fact-index">${String(index + 1).padStart(2, '0')}</span><span><b>${escapeHtml(fact.label)}</b><small>${escapeHtml(fact.detail)} · ${escapeHtml(sourceRef(fact.line))}</small></span><span class="fact-arrow">⌁</span></div>`).join('');
 }
 
+function updatePrivacyNote(sourceCount) {
+  privacyNote.innerHTML = `<span class="lock">⌁</span> ${sourceCount} imported ${sourceCount === 1 ? 'source stays' : 'sources stay'} in this browser. Nothing is uploaded.`;
+}
+
 function renderIssueList() {
   issuesRoot.innerHTML = Object.entries(issues).map(([key, issue]) => `
     <button class="issue ${key === activeKey ? 'active' : ''}" data-issue="${key}">
@@ -273,7 +278,7 @@ function renderNoImportedBreaks() {
 document.querySelector('#run-analysis').addEventListener('click', () => {
   const button = document.querySelector('#run-analysis');
   button.disabled = true;
-  button.textContent = 'Reading revision…';
+  button.textContent = storyMemory ? 'Checking story memory…' : 'Reading revision…';
   status.textContent = 'Story agent is extracting people, objects, knowledge, time, and irreversible events.';
   statusMeta.textContent = storyMemory ? `Checking local sources against ${storyMemory.facts.length} extracted facts` : 'Checking 4 claims against 26 facts';
   setTimeout(() => {
@@ -412,6 +417,7 @@ async function buildStoryMemory() {
     projectMeta.textContent = `${extracted.length} source ${extracted.length === 1 ? 'file' : 'files'} · ${totalScenes || totalPages || 'story'} ${totalScenes === 1 ? 'scene' : totalScenes ? 'scenes' : totalPages === 1 ? 'page' : totalPages ? 'pages' : 'indexed'}`;
     canonCount.textContent = `${storyMemory.facts.length} extracted facts`;
     fileCount.textContent = `${extracted.length} source ${extracted.length === 1 ? 'file' : 'files'}`;
+    updatePrivacyNote(extracted.length);
     status.textContent = `${storyMemory.facts.length} explicit story facts were indexed locally from ${extracted.length} ${extracted.length === 1 ? 'source' : 'sources'}. Run the check to compare their states.`;
     statusMeta.textContent = `${totalScenes || totalPages || storyMemory.lines.length} scenes or lines ready · local-only`;
     stagedFiles = extracted;
@@ -449,5 +455,14 @@ importQueue.addEventListener('click', (event) => {
   dropZone.classList.remove('dragging');
 }));
 dropZone.addEventListener('drop', (event) => addFiles(event.dataTransfer.files));
+
+document.querySelectorAll('.nav-item').forEach((link) => link.addEventListener('click', () => {
+  document.querySelectorAll('.nav-item').forEach((item) => {
+    const active = item === link;
+    item.classList.toggle('active', active);
+    if (active) item.setAttribute('aria-current', 'page');
+    else item.removeAttribute('aria-current');
+  });
+}));
 
 renderImpact(activeKey);

@@ -3,6 +3,7 @@
 html { scroll-behavior:smooth; }
 body { min-width:320px; margin:0; color:var(--ink); background:var(--canvas); font-family:Sora,Arial,sans-serif; }
 button { font:inherit; }
+button:focus-visible,a:focus-visible,input:focus-visible { outline:2px solid var(--accent-bright); outline-offset:3px; }
 .app-shell { min-height:100vh; display:grid; grid-template-columns:245px minmax(0,1fr); background:var(--canvas); }
 .sidebar { display:flex; flex-direction:column; min-height:100vh; padding:28px 18px 21px; background:#151815; border-right:1px solid var(--line); position:sticky; top:0; height:100vh; }.brand { display:flex; align-items:center; gap:10px; color:var(--ink); text-decoration:none; }.brand-mark { display:grid; width:35px; height:35px; place-items:center; color:#171815; background:var(--accent); border-radius:50%; font:500 9px "JetBrains Mono",monospace; letter-spacing:-.16em; }.brand-name { font:600 15px/.87 Sora,sans-serif; letter-spacing:-.08em; }
 nav { display:grid; gap:4px; margin-top:53px; }.nav-item { color:var(--subtle); padding:11px 10px; border-left:2px solid transparent; font-size:11px; text-decoration:none; transition:.18s; }.nav-item span { display:inline-block; width:28px; color:#686e67; font:9px "JetBrains Mono",monospace; }.nav-item:hover,.nav-item.active { color:var(--ink); border-color:var(--accent); background:rgba(232,179,90,.07); }.nav-item.active span { color:var(--accent); }
