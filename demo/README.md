@@ -1,6 +1,6 @@
 # Synthetic continuity walkthrough
 
-These two files are original, synthetic demo material for storyIsStraight.
+These two files are original, synthetic demo material for CanonCue.
 
 1. Open the hosted app or run it locally.
 2. Choose **Add pages** and import `episode-01-canon.txt` as **Canon source**.

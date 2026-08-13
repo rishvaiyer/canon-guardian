@@ -1,4 +1,4 @@
-# storyIsStraight
+# CanonCue
 
 **Get your story straight.** Evidence-backed continuity intelligence for authors, writers' rooms, filmmakers, and any long-form story world.
 

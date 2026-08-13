@@ -713,7 +713,7 @@ function renderCanonBaselineReady(memory) {
   downloadAnnotated.hidden = true;
   const sceneCount = memory.sceneCount || 0;
   issuesRoot.innerHTML = '<p class="empty-queue">Baseline indexed — no revision has been compared yet.</p>';
-  copyRoot.innerHTML = `<p class="eyebrow">CANON BASELINE READY</p><h3>Nothing is “broken” yet.</h3><p>You added one source of truth. storyIsStraight indexed ${sceneCount || 'the'} screenplay ${sceneCount === 1 ? 'scene' : 'scenes'} and only proposes explicit, named states as canon. Import a later draft as an Incoming revision to reveal changes that conflict with approved locks.</p>`;
+  copyRoot.innerHTML = `<p class="eyebrow">CANON BASELINE READY</p><h3>Nothing is “broken” yet.</h3><p>You added one source of truth. CanonCue indexed ${sceneCount || 'the'} screenplay ${sceneCount === 1 ? 'scene' : 'scenes'} and only proposes explicit, named states as canon. Import a later draft as an Incoming revision to reveal changes that conflict with approved locks.</p>`;
   nodesRoot.innerHTML = '';
   lines.innerHTML = '';
   response.innerHTML = `<span class="response-kicker">FIRST PASS COMPLETE</span><p><b>${sceneCount || 'Your'} scenes are indexed locally.</b> The graph opens with a readable scene map; continuity checks become useful once you compare a revision against the facts you approve.</p>`;
@@ -1183,7 +1183,7 @@ async function downloadAnnotatedPdf() {
     });
     let report = pdf.addPage([612, 792]);
     report.drawRectangle({ x: 0, y: 0, width: 612, height: 792, color: rgb(0.97, 0.96, 0.92) });
-    report.drawText('storyIsStraight', { x: 54, y: 710, size: 25, font: bold, color: rgb(0.14, 0.14, 0.12) });
+    report.drawText('CanonCue', { x: 54, y: 710, size: 25, font: bold, color: rgb(0.14, 0.14, 0.12) });
     report.drawText('ANNOTATED CONTINUITY REVIEW', { x: 54, y: 681, size: 9, font: bold, color: rgb(0.65, 0.39, 0.12) });
     report.drawText('Highlighted pages show the evidence path behind this review.', { x: 54, y: 650, size: 10, font: regular, color: rgb(0.35, 0.35, 0.31) });
     let y = 610;
