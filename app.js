@@ -197,13 +197,14 @@ function renderWorkflow() {
   const candidates = projectLedger.facts.filter((fact) => fact.origin === 'ai' && !fact.locked).length;
   const locks = projectLedger.facts.filter((fact) => fact.locked).length;
   const revisions = projectLedger.sources.filter((source) => source.role === 'revision').length;
+  const canonOpenNow = Boolean(storyMemory && currentImportRole === 'canon');
   const steps = [
-    { number: '01', title: 'Add canon', detail: canonSources ? `${canonSources} source${canonSources === 1 ? '' : 's'} indexed` : 'Start with the trusted draft', done: Boolean(canonSources), action: 'canon', cta: 'Add canon' },
-    { number: '02', title: 'Generate candidates', detail: candidates ? `${candidates} facts ready for review` : 'Ask AI to find story rules', done: candidates > 0 || locks > 0, action: 'candidates', cta: 'Generate' },
+    { number: '01', title: 'Add canon', detail: canonSources ? `${canonSources} source${canonSources === 1 ? '' : 's'} indexed` : 'Start with the trusted draft', done: Boolean(canonSources), action: 'canon', cta: canonSources ? 'Re-open canon' : 'Add canon' },
+    { number: '02', title: 'Generate candidates', detail: candidates ? `${candidates} facts ready for review` : canonSources && !canonOpenNow ? 'Re-open canon pages for AI' : 'Ask AI to find story rules', done: candidates > 0 || locks > 0, action: 'candidates', cta: canonSources && !canonOpenNow ? 'Re-open canon' : 'Generate' },
     { number: '03', title: 'Approve canon', detail: locks ? `${locks} fact${locks === 1 ? '' : 's'} locked` : 'Keep only what must stay true', done: locks > 0, action: 'lock', cta: 'Lock fact' },
     { number: '04', title: 'Compare revision', detail: revisions ? `${revisions} revision${revisions === 1 ? '' : 's'} indexed` : 'Bring in the changed pages', done: revisions > 0, action: 'revision', cta: 'Add revision' }
   ];
-  workflowRail.innerHTML = steps.map((step) => `<div class="workflow-step ${step.done ? 'done' : ''}"><span>${step.number}</span><div><b>${step.title}</b><small>${step.detail}</small></div><button class="text-button" data-workflow-action="${step.action}" type="button">${step.done ? 'View' : step.cta} ↗</button></div>`).join('');
+  workflowRail.innerHTML = steps.map((step) => `<div class="workflow-step ${step.done ? 'done' : ''}"><span>${step.number}</span><div><b>${step.title}</b><small>${step.detail}</small></div><button class="text-button" data-workflow-action="${step.action}" type="button">${step.action === 'canon' || (step.action === 'candidates' && !step.done) ? step.cta : 'View'} ↗</button></div>`).join('');
 }
 
 function refreshSavedProject() {
@@ -812,16 +813,17 @@ async function refreshCloudReadiness() {
 
 function renderCanonAiReadiness() {
   const hasCanon = Boolean(storyMemory && currentImportRole === 'canon');
+  const hasSavedCanon = projectLedger.sources.some((source) => source.role === 'canon');
   const serviceReady = cloudConfigured === true;
   canonAiReadiness.innerHTML = [
-    cloudRequirement('Canon source', hasCanon, hasCanon ? 'The currently loaded canon pages are ready.' : 'Import the trusted draft as a Canon source.'),
+    cloudRequirement('Canon source', hasCanon, hasCanon ? 'The currently loaded canon pages are ready.' : hasSavedCanon ? 'Re-open the canon source locally. Full script text is not retained after refresh.' : 'Import the trusted draft as a Canon source.'),
     cloudRequirement('AI service', serviceReady, cloudConfigured === null ? 'Checking secure service connection…' : serviceReady ? 'Gemini Enterprise connected.' : 'Cloud service is unavailable right now.'),
     cloudRequirement('Your approval', canonAiConsent.checked, canonAiConsent.checked ? 'You approved sending this canon source for suggestions.' : 'Consent is required before any text leaves this browser.')
   ].join('');
   canonAiNextStep.hidden = hasCanon;
   if (!hasCanon) {
     canonAiNextStep.dataset.canonAiAction = 'canon';
-    canonAiNextStep.textContent = 'Add a canon source ↗';
+    canonAiNextStep.textContent = hasSavedCanon ? 'Re-open canon source ↗' : 'Add a canon source ↗';
   }
   canonAiButton.disabled = !(hasCanon && serviceReady && canonAiConsent.checked);
 }
