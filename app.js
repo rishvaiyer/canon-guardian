@@ -72,6 +72,9 @@ const cloudDialog = document.querySelector('#cloud-dialog');
 const cloudConsent = document.querySelector('#cloud-consent');
 const cloudError = document.querySelector('#cloud-error');
 const cloudReviewButton = document.querySelector('#run-cloud-review');
+const manualFactDialog = document.querySelector('#manual-fact-dialog');
+const manualFactForm = document.querySelector('#manual-fact-form');
+const manualFactError = document.querySelector('#manual-fact-error');
 const useImport = document.querySelector('#use-import');
 const projectTitle = document.querySelector('#project-title');
 const projectMeta = document.querySelector('#project-meta');
@@ -92,9 +95,10 @@ let currentImportRole = 'canon';
 const projectStorageKey = 'story-is-straight-project-v2';
 let projectLedger = { title: '', sources: [], facts: [] };
 
-const sceneHeadingPattern = /^(?:INT\.?|EXT\.?|INT\/EXT\.?|I\/E\.?)/i;
+const sceneHeadingPattern = /^(?:INT\.?|EXT\.?|INT\/EXT\.?|I\/E\.?)(?![A-Za-z])/i;
 const speakerPattern = /^[A-Z][A-Z .'-]{1,34}$/;
-const ignoredSpeakers = new Set(['INT', 'EXT', 'DAY', 'NIGHT', 'CONTINUOUS', 'CUT TO', 'FADE IN', 'FADE OUT']);
+const ignoredSpeakers = new Set(['INT', 'EXT', 'DAY', 'NIGHT', 'CONTINUOUS', 'CUT TO', 'FADE IN', 'FADE OUT', 'BLACK', 'NARRATOR', 'TITLE', 'MONTAGE', 'VOICE', 'VOICE OVER', 'V O', 'O S', 'ALL', 'GIRL', 'BOY', 'MAN', 'WOMAN', 'HE', 'SHE', 'THEY', 'FAMILY']);
+const ignoredSpeakerWords = new Set(['INT', 'EXT', 'DAY', 'NIGHT', 'CU', 'CLOSE', 'ON', 'ANGLE', 'BOTH', 'TV', 'DUDES', 'ANOTHER', 'CO', 'WORKER', 'THE', 'A', 'AN', 'ASLEEP']);
 
 function cleanExcerpt(value, limit = 142) {
   const normalized = value.replace(/\s+/g, ' ').trim();
@@ -165,7 +169,7 @@ function renderLedgerFacts() {
   const factRoot = document.querySelector('.fact-list');
   const cards = visibleLedgerFacts().slice(0, 8);
   if (!cards.length) {
-    factRoot.innerHTML = '<p class="empty-queue">No explicit lockable facts were found yet. Add scene headings and concrete actions to improve local checks.</p>';
+    factRoot.innerHTML = '<p class="empty-queue">No high-confidence automatic locks were found. That is normal for relationship- and character-driven scripts.</p><button class="text-button add-manual-fact" data-open-manual-fact>+ Lock an important story fact yourself</button>';
     return;
   }
   factRoot.innerHTML = cards.map((fact, index) => `<button class="fact" data-lock-fact="${escapeHtml(fact.id)}"><span class="fact-index">${String(index + 1).padStart(2, '0')}</span><span><b>${escapeHtml(fact.label)}</b><small>${escapeHtml(fact.detail)} · ${escapeHtml(sourceRef(fact.line))}</small></span><span class="fact-state ${fact.locked ? 'locked' : ''}">${fact.locked ? 'LOCKED' : 'LOCK'}</span></button>`).join('');
@@ -191,7 +195,13 @@ function lineHasCharacter(line, character) {
 
 function isLikelySpeaker(text) {
   const normalized = cleanName(text);
-  return normalized.length > 1 && speakerPattern.test(text.trim()) && !ignoredSpeakers.has(normalized);
+  const words = normalized.split(' ');
+  return normalized.length > 1 && speakerPattern.test(text.trim()) && !sceneHeadingPattern.test(text) && !ignoredSpeakers.has(normalized) && !words.some((word) => ignoredSpeakerWords.has(word));
+}
+
+function isKnownCharacter(value, knownCharacters) {
+  const character = cleanName(value);
+  return character.length > 1 && knownCharacters.has(character) && !ignoredSpeakers.has(character);
 }
 
 function buildLocalStoryMemory(files) {
@@ -201,7 +211,7 @@ function buildLocalStoryMemory(files) {
 
   files.forEach((entry) => {
     let sceneNumber = 0;
-    let currentScene = 'Opening pages';
+    let currentScene = '';
     entry.text.split(/\r?\n/).forEach((rawText, lineNumber) => {
       const text = rawText.trim();
       if (!text) return;
@@ -209,14 +219,14 @@ function buildLocalStoryMemory(files) {
         sceneNumber += 1;
         currentScene = `Scene ${sceneNumber}: ${cleanExcerpt(text, 46)}`;
       }
-      if (isLikelySpeaker(text)) characters.add(cleanName(text));
+      if (sceneNumber && isLikelySpeaker(text)) characters.add(cleanName(text));
       lines.push({
         text,
         file: entry.file.name,
         lineNumber: lineNumber + 1,
         index: sourceOrder++,
         sceneNumber,
-        sceneLabel: currentScene
+        sceneLabel: currentScene || 'Front matter'
       });
     });
   });
@@ -225,13 +235,14 @@ function buildLocalStoryMemory(files) {
   const addFact = (type, label, line, detail) => facts.push({ type, label, line, detail });
   const names = [...characters];
   const knownNames = names.length ? names : [];
+  const knownCharacterSet = new Set(knownNames);
 
   lines.forEach((line) => {
-    const deathMatch = line.text.match(/^\s*([A-Z][A-Z' -]{1,34})\s+(?:DIES|IS DEAD|HAS DIED|WAS KILLED|IS KILLED)\b/i)
+    const deathMatch = line.text.match(/^\s*([A-Z][A-Z' -]{1,34})\s+(?:DIES|IS DEAD|HAS DIED|WAS KILLED|IS KILLED)\b/)
       || line.text.match(/\b([A-Z][a-z]+)\s+(?:dies|is dead|has died|was killed|is killed)\b/i);
-    if (deathMatch) {
+    if (deathMatch && isKnownCharacter(deathMatch[1], knownCharacterSet)) {
       const character = cleanName(deathMatch[1]);
-      if (character.length > 1) addFact('death', `${character} is dead`, line, 'Irreversible event');
+      addFact('death', `${character} is dead`, line, 'High-confidence irreversible event');
     }
 
     const injuryMatch = line.text.match(/\b(left|right)\s+(wrist|hand|arm|leg|ankle|shoulder)\b[^.]{0,100}\b(fractured|broken|injured|unusable|bandaged|bloodied|bleeding)\b/i);
@@ -251,7 +262,8 @@ function buildLocalStoryMemory(files) {
   });
 
   const uniqueFacts = facts.filter((fact, index) => facts.findIndex((candidate) => candidate.type === fact.type && candidate.label === fact.label && candidate.line.file === fact.line.file) === index);
-  return { lines, characters: knownNames, facts: uniqueFacts, sourceCount: files.length };
+  const sceneCount = new Set(lines.filter((line) => line.sceneNumber).map((line) => line.sceneLabel)).size;
+  return { lines, characters: knownNames, facts: uniqueFacts, sourceCount: files.length, sceneCount };
 }
 
 function makeImportedIssue(number, severity, title, summary, condition, conflict, type, downstream = []) {
@@ -340,12 +352,9 @@ function deriveStoryGraph(memory) {
     const name = fact.label.match(/^([A-Z][A-Z' -]{1,34})\s+is dead$/i)?.[1];
     if (name) graphCharacters.add(cleanName(name));
   });
-  memory.lines.forEach((line) => (line.text.match(/\b[A-Z]{2,}(?:\s+[A-Z]{2,})?\b/g) || []).forEach((name) => {
-    const cleaned = cleanName(name);
-    if (cleaned.length > 1 && !ignoredSpeakers.has(cleaned)) graphCharacters.add(cleaned);
-  }));
   const buckets = new Map();
-  memory.lines.forEach((line) => {
+  const graphLines = memory.sceneCount ? memory.lines.filter((line) => line.sceneNumber) : memory.lines;
+  graphLines.forEach((line) => {
     const key = line.sceneNumber ? line.sceneLabel : `Beat ${Math.floor((line.lineNumber - 1) / 12) + 1}`;
     if (!buckets.has(key)) buckets.set(key, []);
     buckets.get(key).push(line);
@@ -443,7 +452,7 @@ function renderStoryGraph(memory) {
   const sceneFacts = (storyMemory?.facts || []).filter((fact) => fact.line.sceneLabel === selected.label || fact.line.sceneLabel.startsWith(`${selected.label}:`));
   storyGraphDetail.innerHTML = `<p class="eyebrow">${escapeHtml(selected.label)} / ${memory ? 'IMPORTED SOURCE' : savedLedgerGraph ? 'SAVED CANON' : 'SAMPLE PROJECT'}</p><h3>${escapeHtml(selected.title)}</h3><p>${escapeHtml(selected.excerpt)}</p><span>${selected.characters.length ? `${escapeHtml(selected.characters.join(' · '))} thread` : 'No named character thread extracted'}</span>${sceneFacts.length ? `<button class="text-button graph-lock" data-lock-scene="${escapeHtml(selected.label)}">Lock ${sceneFacts.length} fact${sceneFacts.length === 1 ? '' : 's'} from this scene</button>` : ''}`;
   storyGraphNote.textContent = memory
-    ? `${nodes.length} ${nodes.length === 1 ? 'scene or beat' : 'scenes or beats'} mapped from imported pages. Click a node to inspect its local thread.`
+    ? `${nodes.length}${memory.sceneCount > nodes.length ? ` of ${memory.sceneCount}` : ''} ${nodes.length === 1 ? 'scene or beat' : 'scenes or beats'} shown in this readable map. Click a node to inspect its local thread.`
     : savedLedgerGraph ? `${nodes.length} saved canon ${nodes.length === 1 ? 'scene' : 'scenes'} restored from this browser’s evidence ledger.` : 'The sample graph links the fixed events that drive The Last Loop. Import a script to map every detected scene.';
 }
 
@@ -487,6 +496,80 @@ function renderNoImportedBreaks() {
   response.innerHTML = '<span class="response-kicker">LOCAL MEMORY READY</span><p>I found no explicit state reversals in the imported pages. This is a deterministic first-pass check, so editor review remains the source of truth.</p>';
 }
 
+function renderImportedStoryOverview(memory, role, totalPages) {
+  const scenePanel = document.querySelector('.scene-panel');
+  const firstScene = memory.lines.find((line) => line.sceneNumber) || memory.lines[0];
+  const sceneLabel = firstScene?.sceneLabel?.replace(/^Scene \d+: /, '') || 'Imported pages';
+  const sourceName = firstScene?.file || 'Your source';
+  const mappedScenes = memory.sceneCount || 0;
+  const graphSceneCount = Math.min(mappedScenes, 36);
+  const characterCount = memory.characters.length;
+  const factCount = memory.facts.length;
+  const roleLabel = role === 'revision' ? 'INCOMING REVISION' : 'CANON BASELINE';
+  const nextStep = role === 'revision'
+    ? (projectLedger.facts.some((fact) => fact.locked) ? 'Checking this revision against your approved locks now.' : 'No approved locks yet. Add a canon source and lock the facts you want protected.')
+    : 'This is your baseline, not a contradiction verdict. Add the next draft when you want a comparison.';
+  scenePanel.innerHTML = `
+    <div class="section-heading">
+      <div><p class="eyebrow">${roleLabel} / LOCAL INDEX</p><h2>${escapeHtml(sourceName.replace(/\.[^.]+$/, ''))} is <em>mapped.</em></h2></div>
+      <span class="page-chip">${totalPages ? `${totalPages} PAGES` : `${mappedScenes} SCENES`}</span>
+    </div>
+    <article class="script-paper story-overview" aria-label="Imported story overview">
+      <p class="slug">${escapeHtml(sceneLabel)}</p>
+      <p><strong>${mappedScenes || 'No'} screenplay ${mappedScenes === 1 ? 'scene' : 'scenes'} indexed</strong> from real scene headings. Front matter and title pages are left out; the graph starts with ${graphSceneCount || 'the available'} readable ${graphSceneCount === 1 ? 'scene' : 'scenes'}.</p>
+      <p><strong>${characterCount || 'No'} character ${characterCount === 1 ? 'thread' : 'threads'} recognized</strong>${characterCount ? `: ${escapeHtml(memory.characters.slice(0, 6).join(', '))}${characterCount > 6 ? '…' : ''}.` : '.'}</p>
+      <p><strong>${factCount} high-confidence canon ${factCount === 1 ? 'candidate' : 'candidates'}</strong> found from explicit, named story states. Ambiguous phrases and pronouns are intentionally not turned into canon.</p>
+      <p class="overview-next"><strong>What happens next:</strong> ${escapeHtml(nextStep)}</p>
+    </article>
+    <div class="scene-footer"><span><i></i> ${role === 'revision' ? 'Revision ready for comparison' : 'Canon stays in this browser'}</span><button class="text-button" data-open-revision>${role === 'revision' ? 'Review the story map ↗' : 'Add an incoming revision ↗'}</button></div>`;
+}
+
+function renderCanonBaselineReady(memory) {
+  const sceneCount = memory.sceneCount || 0;
+  issuesRoot.innerHTML = '<p class="empty-queue">Baseline indexed — no revision has been compared yet.</p>';
+  copyRoot.innerHTML = `<p class="eyebrow">CANON BASELINE READY</p><h3>Nothing is “broken” yet.</h3><p>You added one source of truth. storyIsStraight indexed ${sceneCount || 'the'} screenplay ${sceneCount === 1 ? 'scene' : 'scenes'} and only proposes explicit, named states as canon. Import a later draft as an Incoming revision to reveal changes that conflict with approved locks.</p>`;
+  nodesRoot.innerHTML = '';
+  lines.innerHTML = '';
+  response.innerHTML = `<span class="response-kicker">FIRST PASS COMPLETE</span><p><b>${sceneCount || 'Your'} scenes are indexed locally.</b> The graph opens with a readable scene map; continuity checks become useful once you compare a revision against the facts you approve.</p>`;
+}
+
+function renderRevisionNeedsLocks() {
+  issuesRoot.innerHTML = '<p class="empty-queue">No approved canon locks available for this comparison.</p>';
+  copyRoot.innerHTML = '<p class="eyebrow">REVISION INDEXED</p><h3>Choose what must stay true first.</h3><p>This incoming draft is mapped, but a comparison needs at least one approved fact from a canon source. Import the baseline, lock the facts you trust, then add this revision again.</p>';
+  nodesRoot.innerHTML = '';
+  lines.innerHTML = '';
+  response.innerHTML = '<span class="response-kicker">WAITING FOR CANON</span><p>I did not invent a verdict. Add or lock baseline evidence, then I will compare this draft against it.</p>';
+}
+
+function reviewCurrentStory() {
+  if (!storyMemory) return;
+  const lockedFacts = projectLedger.facts.filter((fact) => fact.locked).length;
+  if (currentImportRole === 'canon') {
+    status.textContent = 'Canon baseline indexed locally. Add a later draft to compare changes against approved facts.';
+    statusMeta.textContent = `${storyMemory.sceneCount || storyMemory.lines.length} scenes · ${storyMemory.characters.length} character threads · local-only`;
+    renderCanonBaselineReady(storyMemory);
+    return;
+  }
+  if (!lockedFacts) {
+    status.textContent = 'Incoming revision indexed, but no approved canon locks are available for a truthful comparison.';
+    statusMeta.textContent = `${storyMemory.sceneCount || storyMemory.lines.length} scenes · waiting for canon`;
+    renderRevisionNeedsLocks();
+    return;
+  }
+  issues = analyzeImportedMemory(revisionReviewMemory());
+  const importedKeys = Object.keys(issues);
+  if (!importedKeys.length) {
+    status.textContent = 'No deterministic canon breaks found against your approved locks.';
+    statusMeta.textContent = `${lockedFacts} locks checked · local-only`;
+    renderNoImportedBreaks();
+    return;
+  }
+  activeKey = importedKeys[0];
+  status.textContent = `${importedKeys.length} source-backed ${importedKeys.length === 1 ? 'break' : 'breaks'} found. Each alert includes the exact earlier and later claims.`;
+  statusMeta.textContent = `${importedKeys.length} breaks · ${lockedFacts} approved locks · local-only`;
+  renderImpact(activeKey);
+}
+
 function revisionReviewMemory() {
   const locks = projectLedger.facts.filter((fact) => fact.locked);
   if (currentImportRole !== 'revision' || !locks.length || !storyMemory) return storyMemory;
@@ -511,18 +594,7 @@ document.querySelector('#run-analysis').addEventListener('click', () => {
       renderImpact('code');
       return;
     }
-    issues = analyzeImportedMemory(revisionReviewMemory());
-    const importedKeys = Object.keys(issues);
-    if (!importedKeys.length) {
-      status.textContent = 'No deterministic canon breaks found. The local ledger is ready for the next revision.';
-      statusMeta.textContent = `${storyMemory.facts.length} extracted facts · local-only`;
-      renderNoImportedBreaks();
-      return;
-    }
-    activeKey = importedKeys[0];
-    status.textContent = `${importedKeys.length} source-backed ${importedKeys.length === 1 ? 'break' : 'breaks'} found. Each alert includes the exact earlier and later claims.`;
-    statusMeta.textContent = `${importedKeys.length} breaks · ${lockedFacts || storyMemory.facts.length} ${lockedFacts ? 'locked' : 'extracted'} facts · local-only`;
-    renderImpact(activeKey);
+    reviewCurrentStory();
   }, storyMemory ? 450 : 1200);
 });
 
@@ -555,6 +627,46 @@ function setImportError(message = '') {
 function setCloudError(message = '') {
   cloudError.hidden = !message;
   cloudError.textContent = message;
+}
+
+function setManualFactError(message = '') {
+  manualFactError.hidden = !message;
+  manualFactError.textContent = message;
+}
+
+function openManualFactDialog() {
+  setManualFactError();
+  manualFactForm.reset();
+  manualFactDialog.showModal();
+}
+
+function saveManualFact(event) {
+  event.preventDefault();
+  const label = document.querySelector('#manual-fact-label').value.trim();
+  const sceneLabel = document.querySelector('#manual-fact-scene').value.trim() || 'Manual canon note';
+  const excerpt = document.querySelector('#manual-fact-evidence').value.trim();
+  if (!label || !excerpt) {
+    setManualFactError('Add both the fact and the exact supporting excerpt.');
+    return;
+  }
+  const sourceName = projectLedger.sources.find((source) => source.role === 'canon')?.name || projectTitle.textContent || 'Manual canon note';
+  const fact = {
+    id: `manual|${label.toLowerCase()}|${sceneLabel.toLowerCase()}`,
+    type: 'manual',
+    label,
+    detail: 'Approved manual canon lock',
+    line: { file: sourceName, sceneLabel, lineNumber: 0, text: excerpt },
+    locked: true
+  };
+  const existing = projectLedger.facts.findIndex((saved) => saved.id === fact.id);
+  if (existing >= 0) projectLedger.facts[existing] = fact;
+  else projectLedger.facts.push(fact);
+  saveProjectLedger();
+  refreshSavedProject();
+  if (currentImportRole === 'revision') reviewCurrentStory();
+  manualFactDialog.close();
+  status.textContent = `Locked “${label}” as approved canon. It is ready for comparison and opt-in AI evidence review.`;
+  statusMeta.textContent = `${projectLedger.facts.filter((saved) => saved.locked).length} approved locks · local-only`;
 }
 
 function cloudReviewPayload() {
@@ -679,14 +791,12 @@ async function buildStoryMemory() {
     saveProjectLedger();
     projectTitle.textContent = primaryFile.name.replace(/\.[^.]+$/, '');
     projectMeta.textContent = `${currentImportRole === 'revision' ? 'Revision' : 'Canon'} · ${totalScenes || totalPages || 'story'} ${totalScenes === 1 ? 'scene' : totalScenes ? 'scenes' : totalPages === 1 ? 'page' : totalPages ? 'pages' : 'indexed'}`;
-    status.textContent = currentImportRole === 'revision'
-      ? `${storyMemory.facts.length} revision claims extracted locally. Lock approved facts or run the check against your saved canon.`
-      : `${storyMemory.facts.length} canon candidates were indexed locally. Lock the facts that are true before reviewing a revision.`;
-    statusMeta.textContent = `${totalScenes || totalPages || storyMemory.lines.length} scenes or lines ready · local-only`;
     stagedFiles = [];
     refreshSavedProject();
     renderImportedFacts(storyMemory);
     renderStoryGraph(storyMemory);
+    renderImportedStoryOverview(storyMemory, currentImportRole, totalPages);
+    reviewCurrentStory();
     renderImportQueue();
     importDialog.close();
   } catch (error) {
@@ -710,6 +820,21 @@ document.querySelector('#open-cloud-review').addEventListener('click', () => {
 document.querySelector('#close-cloud').addEventListener('click', () => { setCloudError(); cloudDialog.close(); });
 cloudConsent.addEventListener('change', () => { cloudReviewButton.disabled = !cloudConsent.checked; });
 cloudReviewButton.addEventListener('click', runCloudReview);
+document.querySelector('#close-manual-fact').addEventListener('click', () => { setManualFactError(); manualFactDialog.close(); });
+manualFactForm.addEventListener('submit', saveManualFact);
+document.addEventListener('click', (event) => {
+  if (event.target.closest('[data-open-manual-fact]')) {
+    openManualFactDialog();
+    return;
+  }
+  const action = event.target.closest('[data-open-revision]');
+  if (!action) return;
+  if (currentImportRole === 'revision') document.querySelector('#story-map').scrollIntoView({ behavior: 'smooth' });
+  else {
+    importRole.value = 'revision';
+    importDialog.showModal();
+  }
+});
 uploadInput.addEventListener('change', (event) => addFiles(event.target.files));
 useImport.addEventListener('click', buildStoryMemory);
 importQueue.addEventListener('click', (event) => {

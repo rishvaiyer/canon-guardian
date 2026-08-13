@@ -176,6 +176,19 @@
         <div class="import-footer"><span><i></i> The deterministic local checker remains private and available offline.</span><button class="primary-button" id="run-cloud-review" disabled>Run cloud evidence review</button></div>
       </div>
     </dialog>
+    <dialog class="import-dialog manual-fact-dialog" id="manual-fact-dialog" aria-labelledby="manual-fact-title">
+      <div class="dialog-topline"><span>CANON LEDGER / MANUAL LOCK</span><button class="close-dialog" id="close-manual-fact" aria-label="Close manual fact">×</button></div>
+      <form class="import-content manual-fact-form" id="manual-fact-form">
+        <p class="eyebrow">KEEP THE IMPORTANT THINGS TRUE</p>
+        <h2 id="manual-fact-title">Lock one fact the story <em>depends on.</em></h2>
+        <p class="import-intro">Use this for story rules that need human judgment: a relationship, timeline rule, secret, motivation, prop, or character knowledge. It stays in this browser and can be used in the opt-in AI evidence review.</p>
+        <label><span>FACT TO PROTECT</span><input id="manual-fact-label" required maxlength="180" placeholder="Tom does not know Summer is engaged" /></label>
+        <label><span>SCENE OR CHAPTER</span><input id="manual-fact-scene" maxlength="100" placeholder="Scene 42 · Rooftop" /></label>
+        <label><span>SUPPORTING EXCERPT</span><textarea id="manual-fact-evidence" required maxlength="1200" placeholder="Paste the exact line that establishes this fact."></textarea></label>
+        <p class="import-error" id="manual-fact-error" role="alert" hidden></p>
+        <div class="import-footer"><span><i></i> Saved locally as an approved lock.</span><button class="primary-button" type="submit">Lock this fact</button></div>
+      </form>
+    </dialog>
     <script type="module" src="theme.js"></script>
     <script type="module" src="app.js"></script>
   </body>
