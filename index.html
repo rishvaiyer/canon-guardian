@@ -140,6 +140,10 @@
             <div class="character-filters" id="character-filters" aria-label="Filter story map by character"></div>
             <div class="character-inspector" id="character-inspector" aria-live="polite"></div>
           </div>
+          <div class="atlas-toolbar" aria-label="Story map controls">
+            <div class="atlas-modes" id="atlas-modes" role="group" aria-label="Filter story map"><button class="atlas-mode active" data-atlas-mode="all" type="button">All scenes</button><button class="atlas-mode" data-atlas-mode="evidence" type="button">Evidence</button><button class="atlas-mode" data-atlas-mode="breaks" type="button">Break paths</button></div>
+            <button class="text-button atlas-expand" id="atlas-expand" type="button">Show the full map ↗</button>
+          </div>
           <div class="story-graph-panel" aria-live="polite">
             <svg class="story-graph-lines" id="story-graph-lines" viewBox="0 0 1000 560" preserveAspectRatio="none" aria-hidden="true"></svg>
             <div class="story-graph-nodes" id="story-graph-nodes"></div>
@@ -176,6 +180,8 @@
         <p class="eyebrow">GEMINI ENTERPRISE + CLICKHOUSE</p>
         <h2 id="cloud-title">Ask the agent for a <em>deeper</em> read.</h2>
         <p class="import-intro">The agent retrieves your locked evidence from ClickHouse, then uses Gemini Enterprise to look for nuanced continuity breaks in the current incoming draft. This sends the locked evidence and current draft text to your configured cloud services.</p>
+        <div class="ai-readiness" id="ai-readiness" aria-live="polite"></div>
+        <button class="text-button ai-next-step" id="ai-next-step" type="button" hidden></button>
         <label class="cloud-consent"><input id="cloud-consent" type="checkbox" /> <span>I understand that this review sends the current draft and locked evidence to my configured Gemini Enterprise and ClickHouse accounts.</span></label>
         <p class="import-error" id="cloud-error" role="alert" hidden></p>
         <div class="import-footer"><span><i></i> The deterministic local checker remains private and available offline.</span><button class="primary-button" id="run-cloud-review" disabled>Run cloud evidence review</button></div>

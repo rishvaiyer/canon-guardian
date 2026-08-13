@@ -89,12 +89,19 @@ const storyGraphDetail = document.querySelector('#story-graph-detail');
 const storyGraphNote = document.querySelector('#story-graph-note');
 const characterFilters = document.querySelector('#character-filters');
 const characterInspector = document.querySelector('#character-inspector');
+const atlasModes = document.querySelector('#atlas-modes');
+const atlasExpand = document.querySelector('#atlas-expand');
+const aiReadiness = document.querySelector('#ai-readiness');
+const aiNextStep = document.querySelector('#ai-next-step');
 let activeKey = 'code';
 let activeGraphNode = 0;
 let activeCharacter = 'ALL';
+let activeAtlasMode = 'all';
+let showFullMap = false;
 let stagedFiles = [];
 let storyMemory = null;
 let currentImportRole = 'canon';
+let cloudConfigured = null;
 const projectStorageKey = 'story-is-straight-project-v3';
 let projectLedger = { title: '', sources: [], facts: [] };
 
@@ -362,7 +369,7 @@ function deriveStoryGraph(memory) {
     if (!buckets.has(key)) buckets.set(key, []);
     buckets.get(key).push(line);
   });
-  return [...buckets.entries()].slice(0, 36).map(([label, lines], index) => {
+  return [...buckets.entries()].map(([label, lines], index) => {
     const text = lines.map((line) => line.text).join(' ');
     const characters = [...graphCharacters].filter((character) => lineHasCharacter({ text }, character)).slice(0, 3);
     return {
@@ -439,24 +446,57 @@ function renderCharacterLens(allNodes) {
   if (!characters.some(([character]) => character === activeCharacter)) activeCharacter = 'ALL';
   characterFilters.innerHTML = [`<button class="character-filter ${activeCharacter === 'ALL' ? 'active' : ''}" data-character-filter="ALL">All <span>${allNodes.length}</span></button>`, ...characters.map(([character, count]) => `<button class="character-filter ${activeCharacter === character ? 'active' : ''}" data-character-filter="${escapeHtml(character)}">${escapeHtml(character)} <span>${count}</span></button>`)].join('');
   if (activeCharacter === 'ALL') {
-    characterInspector.innerHTML = `<strong>All characters</strong><span>${characters.length} named threads · ${allNodes.length} mapped scenes. Choose a name to narrow the graph.</span>`;
+    const mostPresent = characters.slice(0, 3).map(([character, count]) => `${character} · ${count}`).join(' / ');
+    characterInspector.innerHTML = `<strong>Story ensemble</strong><span>${characters.length} named threads · ${allNodes.length} mapped scenes</span><small>${mostPresent ? `Most present: ${mostPresent}` : 'Choose a character to open their dossier.'}</small>`;
     return;
   }
   const characterScenes = allNodes.filter((node) => node.characters.includes(activeCharacter));
   const characterFacts = visibleLedgerFacts().filter((fact) => new RegExp(`\\b${activeCharacter.split(' ').map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s+')}\\b`, 'i').test(`${fact.label} ${fact.detail} ${fact.line.text}`));
-  characterInspector.innerHTML = `<strong>${escapeHtml(activeCharacter)}</strong><span>${characterScenes.length} mapped ${characterScenes.length === 1 ? 'scene' : 'scenes'} · ${characterFacts.length} approved or candidate ${characterFacts.length === 1 ? 'fact' : 'facts'}</span><small>${escapeHtml(characterScenes.slice(0, 3).map((scene) => `${scene.label} · ${scene.title}`).join('  /  ') || 'No scene details extracted yet.')}</small>`;
+  const coCharacters = new Map();
+  characterScenes.forEach((scene) => scene.characters.filter((name) => name !== activeCharacter).forEach((name) => coCharacters.set(name, (coCharacters.get(name) || 0) + 1)));
+  const closest = [...coCharacters.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([name, count]) => `${name} · ${count}`).join(' / ');
+  const firstScene = characterScenes[0]?.label || '—';
+  const lastScene = characterScenes.at(-1)?.label || '—';
+  const locked = characterFacts.filter((fact) => fact.locked).length;
+  characterInspector.innerHTML = `<strong>${escapeHtml(activeCharacter)}</strong><span>${characterScenes.length} scenes · ${locked} locked canon · ${characterFacts.length - locked} candidates</span><small>Arc: ${escapeHtml(firstScene)} → ${escapeHtml(lastScene)}${closest ? ` · with ${escapeHtml(closest)}` : ''}</small>`;
+}
+
+function nodeHasEvidence(node) {
+  if (!storyMemory && !projectLedger.facts.length) return true;
+  return visibleLedgerFacts().some((fact) => fact.line.sceneLabel === node.label || fact.line.sceneLabel.startsWith(`${node.label}:`));
+}
+
+function nodeIsOnBreakPath(node) {
+  const normalized = node.label.toLowerCase();
+  return Object.values(issues).some((issue) => (issue.nodes || []).some((item) => String(item[0] || '').toLowerCase() === normalized));
+}
+
+function filterAtlasNodes(allNodes) {
+  if (activeAtlasMode === 'evidence') return allNodes.filter(nodeHasEvidence);
+  if (activeAtlasMode === 'breaks') return allNodes.filter(nodeIsOnBreakPath);
+  return allNodes;
+}
+
+function renderAtlasModes(allNodes, candidateCount) {
+  atlasModes.querySelectorAll('[data-atlas-mode]').forEach((button) => button.classList.toggle('active', button.dataset.atlasMode === activeAtlasMode));
+  atlasExpand.hidden = candidateCount <= 36;
+  atlasExpand.textContent = showFullMap ? 'Use readable map ↙' : `Show all ${candidateCount || allNodes.length} scenes ↗`;
 }
 
 function renderStoryGraph(memory) {
   const allNodes = deriveStoryGraph(memory);
   renderCharacterLens(allNodes);
-  const nodes = activeCharacter === 'ALL' ? allNodes : allNodes.filter((node) => node.characters.includes(activeCharacter));
+  const atlasNodes = filterAtlasNodes(allNodes);
+  const candidateNodes = activeCharacter === 'ALL' ? atlasNodes : atlasNodes.filter((node) => node.characters.includes(activeCharacter));
+  const nodes = showFullMap ? candidateNodes : candidateNodes.slice(0, 36);
+  renderAtlasModes(allNodes, candidateNodes.length);
   const savedLedgerGraph = !memory && projectLedger.facts.length > 0;
   if (!nodes.length) {
     storyGraphLines.innerHTML = '';
     storyGraphNodes.innerHTML = '';
-    storyGraphDetail.innerHTML = `<p class="eyebrow">CHARACTER LENS</p><h3>No mapped scenes yet.</h3><p>Try All characters or add pages where this character appears by name.</p>`;
-    storyGraphNote.textContent = `No displayed scenes mention ${activeCharacter}.`;
+    const filterName = activeAtlasMode === 'evidence' ? 'evidence-bearing' : activeAtlasMode === 'breaks' ? 'break-path' : 'mapped';
+    storyGraphDetail.innerHTML = `<p class="eyebrow">STORY ATLAS</p><h3>No ${filterName} scenes yet.</h3><p>${activeCharacter === 'ALL' ? 'Try All scenes or import more pages.' : `Try All characters or add pages where ${escapeHtml(activeCharacter)} appears by name.`}</p>`;
+    storyGraphNote.textContent = `No ${filterName} scenes are available for this view.`;
     return;
   }
   const edges = buildGraphEdges(nodes);
@@ -479,8 +519,8 @@ function renderStoryGraph(memory) {
   const sceneFacts = (storyMemory?.facts || []).filter((fact) => fact.line.sceneLabel === selected.label || fact.line.sceneLabel.startsWith(`${selected.label}:`));
   storyGraphDetail.innerHTML = `<p class="eyebrow">${escapeHtml(selected.label)} / ${memory ? 'IMPORTED SOURCE' : savedLedgerGraph ? 'SAVED CANON' : 'SAMPLE PROJECT'}</p><h3>${escapeHtml(selected.title)}</h3><p>${escapeHtml(selected.excerpt)}</p><span>${selected.characters.length ? `${escapeHtml(selected.characters.join(' · '))} thread` : 'No named character thread extracted'}</span>${sceneFacts.length ? `<button class="text-button graph-lock" data-lock-scene="${escapeHtml(selected.label)}">Lock ${sceneFacts.length} fact${sceneFacts.length === 1 ? '' : 's'} from this scene</button>` : ''}`;
   storyGraphNote.textContent = memory
-    ? `${activeCharacter === 'ALL' ? '' : `${activeCharacter} · `}${nodes.length}${memory.sceneCount > allNodes.length ? ` of ${memory.sceneCount}` : ''} ${nodes.length === 1 ? 'scene or beat' : 'scenes or beats'} shown in this readable map. Click a node to inspect its local thread.`
-    : savedLedgerGraph ? `${nodes.length} saved canon ${nodes.length === 1 ? 'scene' : 'scenes'} restored from this browser’s evidence ledger.` : 'The sample graph links the fixed events that drive The Last Loop. Import a script to map every detected scene.';
+    ? `${activeCharacter === 'ALL' ? '' : `${activeCharacter} · `}${nodes.length}${candidateNodes.length > nodes.length ? ` of ${candidateNodes.length}` : ''}${memory.sceneCount > allNodes.length && activeCharacter === 'ALL' ? ` of ${memory.sceneCount}` : ''} ${nodes.length === 1 ? 'scene or beat' : 'scenes or beats'} shown${activeAtlasMode !== 'all' ? ` · ${activeAtlasMode === 'evidence' ? 'evidence only' : 'break paths only'}` : ''}. Click a node to inspect its local thread.`
+    : savedLedgerGraph ? `${nodes.length} saved canon ${nodes.length === 1 ? 'scene' : 'scenes'} restored from this browser’s evidence ledger.` : activeAtlasMode === 'breaks' ? 'The sample graph is showing the linked break path in The Last Loop. Import a script to map your own scenes.' : activeAtlasMode === 'evidence' ? 'The sample graph is showing evidence-bearing scenes in The Last Loop. Import a script to map your own scenes.' : 'The sample graph links the fixed events that drive The Last Loop. Import a script to map every detected scene.';
 }
 
 function updatePrivacyNote(sourceCount) {
@@ -708,6 +748,63 @@ function cloudReviewPayload() {
   };
 }
 
+function cloudRequirement(label, ready, detail) {
+  return `<div class="ai-requirement ${ready ? 'ready' : 'waiting'}"><span>${ready ? '✓' : '○'}</span><div><b>${escapeHtml(label)}</b><small>${escapeHtml(detail)}</small></div></div>`;
+}
+
+function renderCloudReadiness() {
+  const hasRevision = Boolean(storyMemory && currentImportRole === 'revision');
+  const lockedCount = projectLedger.facts.filter((fact) => fact.locked).length;
+  const serviceReady = cloudConfigured === true;
+  aiReadiness.innerHTML = [
+    cloudRequirement('Incoming draft', hasRevision, hasRevision ? 'Current revision is ready to review.' : 'Add pages as an Incoming draft.'),
+    cloudRequirement('Approved canon', lockedCount > 0, lockedCount ? `${lockedCount} locked ${lockedCount === 1 ? 'fact is' : 'facts are'} ready.` : 'Lock at least one fact you want protected.'),
+    cloudRequirement('AI service', serviceReady, cloudConfigured === null ? 'Checking secure service connection…' : serviceReady ? 'Gemini Enterprise + ClickHouse connected.' : 'Cloud service is unavailable right now.')
+  ].join('');
+  const next = !hasRevision ? { action: 'revision', label: 'Add an incoming draft ↗' } : !lockedCount ? { action: 'lock', label: 'Lock a canon fact ↗' } : null;
+  aiNextStep.hidden = !next;
+  if (next) {
+    aiNextStep.dataset.aiAction = next.action;
+    aiNextStep.textContent = next.label;
+  }
+  cloudReviewButton.disabled = !(hasRevision && lockedCount && serviceReady && cloudConsent.checked);
+}
+
+async function refreshCloudReadiness() {
+  cloudConfigured = null;
+  renderCloudReadiness();
+  try {
+    const healthResponse = await fetch('/api/health', { cache: 'no-store' });
+    const health = await healthResponse.json();
+    cloudConfigured = Boolean(healthResponse.ok && health.configured);
+  } catch {
+    cloudConfigured = false;
+  }
+  renderCloudReadiness();
+}
+
+function renderCloudFindings(review) {
+  const findings = Array.isArray(review?.findings) ? review.findings.slice(0, 4) : [];
+  if (!findings.length) return;
+  issues = Object.fromEntries(findings.map((finding, index) => [`cloud-${index}`, {
+    number: `AI ${String(index + 1).padStart(2, '0')}`,
+    title: finding.title || 'Continuity concern',
+    severity: String(finding.severity || 'review').toUpperCase(),
+    summary: finding.why || 'The agent found a source-backed concern.',
+    heading: finding.title || 'Evidence-backed continuity concern.',
+    copy: `${finding.why || 'Review this claim against the cited canon evidence.'} Smallest repair: ${finding.smallest_repair || 'Review this beat with the story editor.'}`,
+    evidence: `GEMINI EVIDENCE · ${finding.evidence || 'Retrieved canon evidence'}`,
+    nodes: [
+      ['CANON EVIDENCE', finding.evidence || 'Approved source', 'Retrieved from ClickHouse'],
+      ['INCOMING DRAFT', finding.title || 'Continuity concern', 'Gemini evidence review'],
+      ['SMALLEST REPAIR', finding.smallest_repair || 'Editor review required', 'Recommended next edit']
+    ]
+  }]));
+  activeKey = 'cloud-0';
+  renderImpact(activeKey);
+  response.innerHTML = `<span class="response-kicker">GEMINI ENTERPRISE / CLICKHOUSE</span><p><b>${escapeHtml(review.summary || `${findings.length} evidence-backed ${findings.length === 1 ? 'concern' : 'concerns'} found.`)}</b> The AI findings are now mapped below as repair paths.</p>`;
+}
+
 async function runCloudReview() {
   cloudReviewButton.disabled = true;
   cloudReviewButton.textContent = 'Retrieving evidence…';
@@ -717,15 +814,17 @@ async function runCloudReview() {
     const payload = await cloudHttpResponse.json();
     if (!cloudHttpResponse.ok) throw new Error(payload.error || 'Cloud evidence review could not be completed.');
     const findings = Array.isArray(payload.review?.findings) ? payload.review.findings.slice(0, 4) : [];
-    response.innerHTML = `<span class="response-kicker">GEMINI ENTERPRISE / CLICKHOUSE</span><p><b>${escapeHtml(payload.review?.summary || 'Cloud evidence review complete.')}</b>${findings.length ? ` ${findings.map((finding) => `${escapeHtml(finding.severity || 'review').toUpperCase()}: ${escapeHtml(finding.title || 'Continuity concern')}. ${escapeHtml(finding.smallest_repair || finding.why || '')}`).join(' ')}` : ' No additional evidence-backed concerns were returned.'}</p>`;
+    if (findings.length) renderCloudFindings(payload.review);
+    else response.innerHTML = `<span class="response-kicker">GEMINI ENTERPRISE / CLICKHOUSE</span><p><b>${escapeHtml(payload.review?.summary || 'Cloud evidence review complete.')}</b> No additional evidence-backed concerns were returned.</p>`;
     status.textContent = `Cloud evidence review completed using ${payload.evidenceCount} locked facts retrieved from ClickHouse.`;
     statusMeta.textContent = 'Gemini Enterprise agent · ClickHouse evidence';
+    renderStoryGraph(storyMemory);
     cloudDialog.close();
   } catch (error) {
     setCloudError(error.message);
   } finally {
     cloudReviewButton.textContent = 'Run cloud evidence review';
-    cloudReviewButton.disabled = !cloudConsent.checked;
+    renderCloudReadiness();
   }
 }
 
@@ -838,15 +937,24 @@ async function buildStoryMemory() {
 
 document.querySelector('#open-upload').addEventListener('click', () => importDialog.showModal());
 document.querySelector('#close-upload').addEventListener('click', () => { setImportError(); importDialog.close(); });
-document.querySelector('#open-cloud-review').addEventListener('click', () => {
+document.querySelector('#open-cloud-review').addEventListener('click', async () => {
   setCloudError();
   cloudConsent.checked = false;
-  cloudReviewButton.disabled = true;
   cloudDialog.showModal();
+  await refreshCloudReadiness();
 });
 document.querySelector('#close-cloud').addEventListener('click', () => { setCloudError(); cloudDialog.close(); });
-cloudConsent.addEventListener('change', () => { cloudReviewButton.disabled = !cloudConsent.checked; });
+cloudConsent.addEventListener('change', renderCloudReadiness);
 cloudReviewButton.addEventListener('click', runCloudReview);
+aiNextStep.addEventListener('click', () => {
+  const action = aiNextStep.dataset.aiAction;
+  cloudDialog.close();
+  if (action === 'revision') {
+    importRole.value = 'revision';
+    importDialog.showModal();
+  }
+  if (action === 'lock') openManualFactDialog();
+});
 document.querySelector('#close-manual-fact').addEventListener('click', () => { setManualFactError(); manualFactDialog.close(); });
 manualFactForm.addEventListener('submit', saveManualFact);
 document.addEventListener('click', (event) => {
@@ -922,6 +1030,21 @@ characterFilters.addEventListener('click', (event) => {
   const filter = event.target.closest('[data-character-filter]');
   if (!filter) return;
   activeCharacter = filter.dataset.characterFilter;
+  activeGraphNode = 0;
+  renderStoryGraph(storyMemory);
+});
+
+atlasModes.addEventListener('click', (event) => {
+  const mode = event.target.closest('[data-atlas-mode]');
+  if (!mode) return;
+  activeAtlasMode = mode.dataset.atlasMode;
+  activeGraphNode = 0;
+  showFullMap = false;
+  renderStoryGraph(storyMemory);
+});
+
+atlasExpand.addEventListener('click', () => {
+  showFullMap = !showFullMap;
   activeGraphNode = 0;
   renderStoryGraph(storyMemory);
 });
