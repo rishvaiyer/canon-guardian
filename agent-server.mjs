@@ -110,7 +110,7 @@ async function reviewWithCloud(body) {
     });
     const evidence = await result.json();
     const ai = createEnterpriseClient();
-    const prompt = `You are the storyIsStraight Continuity Agent. Review an incoming draft against approved canon evidence retrieved from ClickHouse. Return concise JSON only with this exact shape: {"summary":"...","findings":[{"severity":"critical|high|medium|low","title":"...","why":"...","evidence":"source · scene · line","smallest_repair":"..."}]}. Only make a finding when you can cite an evidence row. Do not invent facts.\n\nAPPROVED CANON EVIDENCE:\n${JSON.stringify(evidence)}\n\nINCOMING DRAFT:\n${revisionText.slice(0, 120000)}`;
+    const prompt = `You are the storyIsStraight Continuity Crew. Review an incoming draft against approved canon evidence retrieved from ClickHouse. Return concise JSON only with this exact shape: {"summary":"...","findings":[{"severity":"critical|high|medium|low","confidence":"high|medium|low","title":"...","why":"...","evidence":"source · scene · line","downstream_beats":["specific later beat at risk"],"repair_options":["smallest edit option","canon change option"],"smallest_repair":"..."}]}. Only make a finding when you can cite an evidence row. Downstream beats must be stated in the incoming draft or clearly described as a direct consequence; never invent scenes. Repair options must be concrete and keep human approval required. Do not invent facts.\n\nAPPROVED CANON EVIDENCE:\n${JSON.stringify(evidence)}\n\nINCOMING DRAFT:\n${revisionText.slice(0, 120000)}`;
     const completion = await ai.models.generateContent({ model: process.env.GEMINI_MODEL || 'gemini-2.5-flash', contents: prompt, config: { responseMimeType: 'application/json', temperature: 0.15 } });
     const raw = completion.text || '{"summary":"Gemini returned no text.","findings":[]}';
     let review;
@@ -121,10 +121,10 @@ async function reviewWithCloud(body) {
       review,
       evidenceCount: evidence.length,
       trace: [
-        { label: 'Retrieved approved canon', detail: `${evidence.length} locked evidence row${evidence.length === 1 ? '' : 's'} loaded from ClickHouse.` },
-        { label: 'Sent the incoming revision to Gemini', detail: `${revisionLines} non-empty draft line${revisionLines === 1 ? '' : 's'} reviewed with structured JSON output.` },
-        { label: 'Gemini found evidence-backed concerns', detail: `${findings.length} finding${findings.length === 1 ? '' : 's'} returned; unsupported claims were excluded.` },
-        { label: 'Mapped repair paths', detail: `${findings.length} candidate repair path${findings.length === 1 ? '' : 's'} returned to the browser for editor approval.` },
+        { label: 'Canon Retriever · ClickHouse', detail: `${evidence.length} locked evidence row${evidence.length === 1 ? '' : 's'} loaded.` },
+        { label: 'Continuity Analyst · Gemini', detail: `${revisionLines} non-empty draft line${revisionLines === 1 ? '' : 's'} reviewed with structured output.` },
+        { label: 'Impact Mapper · evidence gate', detail: `${findings.length} finding${findings.length === 1 ? '' : 's'} returned; unsupported claims were excluded.` },
+        { label: 'Repair Editor · human options', detail: `${findings.length} repair path${findings.length === 1 ? '' : 's'} returned for approval.` },
         { label: 'Human approval remains required', detail: 'No canon fact is changed automatically.' }
       ]
     };

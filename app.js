@@ -1083,19 +1083,19 @@ function renderCloudFindings(review) {
     number: `AI ${String(index + 1).padStart(2, '0')}`,
     title: finding.title || 'Continuity concern',
     severity: String(finding.severity || 'review').toUpperCase(),
-    summary: finding.why || 'The agent found a source-backed concern.',
+    summary: `${finding.why || 'The agent found a source-backed concern.'}${finding.confidence ? ` · ${String(finding.confidence).toUpperCase()} confidence` : ''}`,
     heading: finding.title || 'Evidence-backed continuity concern.',
-    copy: `${finding.why || 'Review this claim against the cited canon evidence.'} Smallest repair: ${finding.smallest_repair || 'Review this beat with the story editor.'}`,
+    copy: `${finding.why || 'Review this claim against the cited canon evidence.'} ${Array.isArray(finding.downstream_beats) && finding.downstream_beats.length ? `Downstream at risk: ${finding.downstream_beats.join(' · ')}.` : ''} Repair options: ${Array.isArray(finding.repair_options) && finding.repair_options.length ? finding.repair_options.join(' / ') : finding.smallest_repair || 'Review this beat with the story editor.'}`,
     evidence: `GEMINI EVIDENCE · ${finding.evidence || 'Retrieved canon evidence'}`,
     nodes: [
       ['CANON EVIDENCE', finding.evidence || 'Approved source', 'Retrieved from ClickHouse'],
-      ['INCOMING DRAFT', finding.title || 'Continuity concern', 'Gemini evidence review'],
-      ['SMALLEST REPAIR', finding.smallest_repair || 'Editor review required', 'Recommended next edit']
+      ['BREAK DETECTOR', finding.title || 'Continuity concern', `${String(finding.confidence || 'review').toUpperCase()} confidence · Gemini`],
+      ['REPAIR PLAN', finding.smallest_repair || (Array.isArray(finding.repair_options) ? finding.repair_options[0] : null) || 'Editor review required', `${Array.isArray(finding.downstream_beats) ? finding.downstream_beats.length : 0} downstream beat${Array.isArray(finding.downstream_beats) && finding.downstream_beats.length === 1 ? '' : 's'} at risk`]
     ]
   }]));
   activeKey = 'cloud-0';
   renderImpact(activeKey);
-  response.innerHTML = `<span class="response-kicker">GEMINI ENTERPRISE / CLICKHOUSE</span><p><b>${escapeHtml(review.summary || `${findings.length} evidence-backed ${findings.length === 1 ? 'concern' : 'concerns'} found.`)}</b> The AI findings are now mapped below as repair paths.</p>`;
+  response.innerHTML = `<span class="response-kicker">CONTINUITY CREW / GEMINI + CLICKHOUSE</span><p><b>${escapeHtml(review.summary || `${findings.length} evidence-backed ${findings.length === 1 ? 'concern' : 'concerns'} found.`)}</b> The crew separated canon evidence, break detection, downstream risk, and repair options for your approval.</p>`;
 }
 
 async function runCloudReview() {
@@ -1108,7 +1108,7 @@ async function runCloudReview() {
     if (!cloudHttpResponse.ok) throw new Error(payload.error || 'Cloud evidence review could not be completed.');
     const findings = Array.isArray(payload.review?.findings) ? payload.review.findings.slice(0, 4) : [];
     if (findings.length) renderCloudFindings(payload.review);
-    else response.innerHTML = `<span class="response-kicker">GEMINI ENTERPRISE / CLICKHOUSE</span><p><b>${escapeHtml(payload.review?.summary || 'Cloud evidence review complete.')}</b> No additional evidence-backed concerns were returned.</p>`;
+    else response.innerHTML = `<span class="response-kicker">CONTINUITY CREW / GEMINI + CLICKHOUSE</span><p><b>${escapeHtml(payload.review?.summary || 'Continuity crew complete.')}</b> No additional evidence-backed concerns were returned.</p>`;
     renderAgentTrace(payload.trace);
     status.textContent = `Cloud evidence review completed using ${payload.evidenceCount} locked facts retrieved from ClickHouse.`;
     statusMeta.textContent = 'Gemini Enterprise agent · ClickHouse evidence';
