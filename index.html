@@ -47,6 +47,7 @@
           <div class="top-actions">
             <button class="theme-button" id="theme-toggle" type="button" aria-pressed="false" title="Switch to light mode"><span aria-hidden="true">☼</span> Light</button>
             <button class="secondary-button" id="open-upload">+ Add pages</button>
+            <button class="secondary-button cloud-button" id="open-canon-ai" type="button"><span class="spark">✦</span> Generate canon</button>
             <button class="secondary-button cloud-button" id="open-cloud-review" type="button"><span class="spark">✦</span> AI evidence review</button>
             <button class="primary-button" id="run-analysis"><span class="spark">✦</span> Check continuity</button>
           </div>
@@ -57,6 +58,7 @@
           <span id="analysis-status">Your story workspace is ready to compare the next draft against locked canon.</span>
           <span class="status-meta" id="status-meta">26 facts indexed · 0 checks running</span>
         </section>
+        <section class="workflow-rail" id="workflow-rail" aria-label="Story workflow"></section>
 
         <div class="hero-grid" id="review">
           <section class="scene-panel">
@@ -185,6 +187,19 @@
         <label class="cloud-consent"><input id="cloud-consent" type="checkbox" /> <span>I understand that this review sends the current draft and locked evidence to my configured Gemini Enterprise and ClickHouse accounts.</span></label>
         <p class="import-error" id="cloud-error" role="alert" hidden></p>
         <div class="import-footer"><span><i></i> The deterministic local checker remains private and available offline.</span><button class="primary-button" id="run-cloud-review" disabled>Run cloud evidence review</button></div>
+      </div>
+    </dialog>
+    <dialog class="import-dialog cloud-dialog" id="canon-ai-dialog" aria-labelledby="canon-ai-title">
+      <div class="dialog-topline"><span>OPT-IN AI CANON EXTRACTION</span><button class="close-dialog" id="close-canon-ai" aria-label="Close canon generation">×</button></div>
+      <div class="import-content">
+        <p class="eyebrow">GEMINI ENTERPRISE / DRAFT CANDIDATES</p>
+        <h2 id="canon-ai-title">Find the facts your story must <em>keep true.</em></h2>
+        <p class="import-intro">Gemini reads the canon source currently loaded in this browser and suggests relationship, timeline, knowledge, motivation, prop, and state facts with supporting excerpts. These are suggestions—not approved canon—until you lock them.</p>
+        <div class="ai-readiness" id="canon-ai-readiness" aria-live="polite"></div>
+        <button class="text-button ai-next-step" id="canon-ai-next-step" type="button" hidden></button>
+        <label class="cloud-consent"><input id="canon-ai-consent" type="checkbox" /> <span>I understand that this sends the current canon-source text to my configured Gemini Enterprise service. Candidate facts return to this browser for my review.</span></label>
+        <p class="import-error" id="canon-ai-error" role="alert" hidden></p>
+        <div class="import-footer"><span><i></i> Nothing is approved or locked automatically.</span><button class="primary-button" id="run-canon-ai" disabled>Generate reviewable candidates</button></div>
       </div>
     </dialog>
     <dialog class="import-dialog manual-fact-dialog" id="manual-fact-dialog" aria-labelledby="manual-fact-title">

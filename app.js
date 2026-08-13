@@ -93,6 +93,13 @@ const atlasModes = document.querySelector('#atlas-modes');
 const atlasExpand = document.querySelector('#atlas-expand');
 const aiReadiness = document.querySelector('#ai-readiness');
 const aiNextStep = document.querySelector('#ai-next-step');
+const workflowRail = document.querySelector('#workflow-rail');
+const canonAiDialog = document.querySelector('#canon-ai-dialog');
+const canonAiConsent = document.querySelector('#canon-ai-consent');
+const canonAiReadiness = document.querySelector('#canon-ai-readiness');
+const canonAiNextStep = document.querySelector('#canon-ai-next-step');
+const canonAiError = document.querySelector('#canon-ai-error');
+const canonAiButton = document.querySelector('#run-canon-ai');
 let activeKey = 'code';
 let activeGraphNode = 0;
 let activeCharacter = 'ALL';
@@ -132,7 +139,7 @@ function factId(fact) {
 }
 
 function storedFact(fact) {
-  return { id: factId(fact), type: fact.type, label: fact.label, detail: fact.detail, line: { ...fact.line }, locked: false };
+  return { id: factId(fact), type: fact.type, label: fact.label, detail: fact.detail, line: { ...fact.line }, origin: fact.origin || 'local', locked: false };
 }
 
 function readProjectLedger() {
@@ -177,12 +184,26 @@ function renderSeriesLibrary() {
 
 function renderLedgerFacts() {
   const factRoot = document.querySelector('.fact-list');
-  const cards = visibleLedgerFacts().slice(0, 8);
+  const cards = visibleLedgerFacts().sort((left, right) => Number(right.locked) - Number(left.locked) || Number(right.origin === 'ai') - Number(left.origin === 'ai')).slice(0, 20);
   if (!cards.length) {
     factRoot.innerHTML = '<p class="empty-queue">No high-confidence automatic locks were found. That is normal for relationship- and character-driven scripts.</p><button class="text-button add-manual-fact" data-open-manual-fact>+ Lock an important story fact yourself</button>';
     return;
   }
-  factRoot.innerHTML = cards.map((fact, index) => `<button class="fact" data-lock-fact="${escapeHtml(fact.id)}"><span class="fact-index">${String(index + 1).padStart(2, '0')}</span><span><b>${escapeHtml(fact.label)}</b><small>${escapeHtml(fact.detail)} · ${escapeHtml(sourceRef(fact.line))}</small></span><span class="fact-state ${fact.locked ? 'locked' : ''}">${fact.locked ? 'LOCKED' : 'LOCK'}</span></button>`).join('');
+  factRoot.innerHTML = cards.map((fact, index) => `<button class="fact" data-lock-fact="${escapeHtml(fact.id)}"><span class="fact-index">${String(index + 1).padStart(2, '0')}</span><span><b>${escapeHtml(fact.label)}</b><small>${escapeHtml(fact.detail)} · ${escapeHtml(sourceRef(fact.line))}</small></span><span class="fact-state ${fact.locked ? 'locked' : ''}">${fact.locked ? 'LOCKED' : fact.origin === 'ai' ? 'REVIEW' : 'LOCK'}</span></button>`).join('');
+}
+
+function renderWorkflow() {
+  const canonSources = projectLedger.sources.filter((source) => source.role === 'canon').length;
+  const candidates = projectLedger.facts.filter((fact) => fact.origin === 'ai' && !fact.locked).length;
+  const locks = projectLedger.facts.filter((fact) => fact.locked).length;
+  const revisions = projectLedger.sources.filter((source) => source.role === 'revision').length;
+  const steps = [
+    { number: '01', title: 'Add canon', detail: canonSources ? `${canonSources} source${canonSources === 1 ? '' : 's'} indexed` : 'Start with the trusted draft', done: Boolean(canonSources), action: 'canon', cta: 'Add canon' },
+    { number: '02', title: 'Generate candidates', detail: candidates ? `${candidates} facts ready for review` : 'Ask AI to find story rules', done: candidates > 0 || locks > 0, action: 'candidates', cta: 'Generate' },
+    { number: '03', title: 'Approve canon', detail: locks ? `${locks} fact${locks === 1 ? '' : 's'} locked` : 'Keep only what must stay true', done: locks > 0, action: 'lock', cta: 'Lock fact' },
+    { number: '04', title: 'Compare revision', detail: revisions ? `${revisions} revision${revisions === 1 ? '' : 's'} indexed` : 'Bring in the changed pages', done: revisions > 0, action: 'revision', cta: 'Add revision' }
+  ];
+  workflowRail.innerHTML = steps.map((step) => `<div class="workflow-step ${step.done ? 'done' : ''}"><span>${step.number}</span><div><b>${step.title}</b><small>${step.detail}</small></div><button class="text-button" data-workflow-action="${step.action}" type="button">${step.done ? 'View' : step.cta} ↗</button></div>`).join('');
 }
 
 function refreshSavedProject() {
@@ -197,6 +218,7 @@ function refreshSavedProject() {
   }
   renderSeriesLibrary();
   renderLedgerFacts();
+  renderWorkflow();
 }
 
 function lineHasCharacter(line, character) {
@@ -696,6 +718,11 @@ function setCloudError(message = '') {
   cloudError.textContent = message;
 }
 
+function setCanonAiError(message = '') {
+  canonAiError.hidden = !message;
+  canonAiError.textContent = message;
+}
+
 function setManualFactError(message = '') {
   manualFactError.hidden = !message;
   manualFactError.textContent = message;
@@ -781,6 +808,96 @@ async function refreshCloudReadiness() {
     cloudConfigured = false;
   }
   renderCloudReadiness();
+}
+
+function renderCanonAiReadiness() {
+  const hasCanon = Boolean(storyMemory && currentImportRole === 'canon');
+  const serviceReady = cloudConfigured === true;
+  canonAiReadiness.innerHTML = [
+    cloudRequirement('Canon source', hasCanon, hasCanon ? 'The currently loaded canon pages are ready.' : 'Import the trusted draft as a Canon source.'),
+    cloudRequirement('AI service', serviceReady, cloudConfigured === null ? 'Checking secure service connection…' : serviceReady ? 'Gemini Enterprise connected.' : 'Cloud service is unavailable right now.'),
+    cloudRequirement('Your approval', canonAiConsent.checked, canonAiConsent.checked ? 'You approved sending this canon source for suggestions.' : 'Consent is required before any text leaves this browser.')
+  ].join('');
+  canonAiNextStep.hidden = hasCanon;
+  if (!hasCanon) {
+    canonAiNextStep.dataset.canonAiAction = 'canon';
+    canonAiNextStep.textContent = 'Add a canon source ↗';
+  }
+  canonAiButton.disabled = !(hasCanon && serviceReady && canonAiConsent.checked);
+}
+
+async function refreshCanonAiReadiness() {
+  cloudConfigured = null;
+  renderCanonAiReadiness();
+  try {
+    const healthResponse = await fetch('/api/health', { cache: 'no-store' });
+    const health = await healthResponse.json();
+    cloudConfigured = Boolean(healthResponse.ok && health.configured);
+  } catch {
+    cloudConfigured = false;
+  }
+  renderCanonAiReadiness();
+}
+
+function canonCandidatePayload() {
+  if (!storyMemory || currentImportRole !== 'canon') throw new Error('Import the trusted draft as a Canon source before generating candidates.');
+  return {
+    consent: true,
+    projectTitle: projectTitle.textContent,
+    canonText: storyMemory.lines.map((line) => `[${line.sceneLabel}] ${line.text}`).join('\n').slice(0, 120000),
+    sourceName: projectLedger.sources.find((source) => source.role === 'canon')?.name || projectTitle.textContent
+  };
+}
+
+function ingestCanonCandidates(candidates, sourceName) {
+  const allowedTypes = new Set(['relationship', 'timeline', 'knowledge', 'motivation', 'prop', 'state', 'location', 'wardrobe', 'other']);
+  let added = 0;
+  candidates.slice(0, 30).forEach((candidate, index) => {
+    const label = cleanExcerpt(String(candidate.label || '').trim(), 180);
+    const excerpt = cleanExcerpt(String(candidate.evidence || '').trim(), 1200);
+    if (!label || !excerpt) return;
+    const type = allowedTypes.has(String(candidate.type || '').toLowerCase()) ? String(candidate.type).toLowerCase() : 'other';
+    const sceneLabel = cleanExcerpt(String(candidate.scene_label || candidate.sceneLabel || 'Imported canon').trim(), 100);
+    const fact = {
+      id: `ai|${type}|${label.toLowerCase()}|${sceneLabel.toLowerCase()}|${index}`,
+      type,
+      label,
+      detail: `AI candidate · ${cleanExcerpt(String(candidate.why || candidate.reason || 'Review the supporting excerpt before locking.'), 110)}`,
+      line: { file: sourceName, sceneLabel, lineNumber: Number(candidate.line_number || candidate.lineNumber || 0), text: excerpt },
+      origin: 'ai',
+      locked: false
+    };
+    if (!projectLedger.facts.some((saved) => saved.id === fact.id || (saved.label === fact.label && saved.line.text === fact.line.text))) {
+      projectLedger.facts.push(fact);
+      added += 1;
+    }
+  });
+  saveProjectLedger();
+  refreshSavedProject();
+  renderStoryGraph(storyMemory);
+  return added;
+}
+
+async function runCanonAi() {
+  canonAiButton.disabled = true;
+  canonAiButton.textContent = 'Finding candidate facts…';
+  setCanonAiError();
+  try {
+    const serverResponse = await fetch('/api/agent/canon-candidates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(canonCandidatePayload()) });
+    const payload = await serverResponse.json();
+    if (!serverResponse.ok) throw new Error(payload.error || 'AI canon extraction could not be completed.');
+    const added = ingestCanonCandidates(Array.isArray(payload.candidates) ? payload.candidates : [], canonCandidatePayload().sourceName);
+    const candidateCount = Array.isArray(payload.candidates) ? payload.candidates.length : 0;
+    response.innerHTML = `<span class="response-kicker">GEMINI CANON CANDIDATES</span><p><b>${added || candidateCount} reviewable ${added === 1 || candidateCount === 1 ? 'fact was' : 'facts were'} added to the ledger.</b> Read the supporting excerpt, then lock only the rules you want this story to preserve.</p>`;
+    status.textContent = `${added || candidateCount} AI canon candidates are ready for your review. Nothing was locked automatically.`;
+    statusMeta.textContent = 'Gemini suggestions · human approval required';
+    canonAiDialog.close();
+  } catch (error) {
+    setCanonAiError(error.message);
+  } finally {
+    canonAiButton.textContent = 'Generate reviewable candidates';
+    renderCanonAiReadiness();
+  }
 }
 
 function renderCloudFindings(review) {
@@ -943,9 +1060,18 @@ document.querySelector('#open-cloud-review').addEventListener('click', async () 
   cloudDialog.showModal();
   await refreshCloudReadiness();
 });
+document.querySelector('#open-canon-ai').addEventListener('click', async () => {
+  setCanonAiError();
+  canonAiConsent.checked = false;
+  canonAiDialog.showModal();
+  await refreshCanonAiReadiness();
+});
 document.querySelector('#close-cloud').addEventListener('click', () => { setCloudError(); cloudDialog.close(); });
+document.querySelector('#close-canon-ai').addEventListener('click', () => { setCanonAiError(); canonAiDialog.close(); });
 cloudConsent.addEventListener('change', renderCloudReadiness);
+canonAiConsent.addEventListener('change', renderCanonAiReadiness);
 cloudReviewButton.addEventListener('click', runCloudReview);
+canonAiButton.addEventListener('click', runCanonAi);
 aiNextStep.addEventListener('click', () => {
   const action = aiNextStep.dataset.aiAction;
   cloudDialog.close();
@@ -955,9 +1081,25 @@ aiNextStep.addEventListener('click', () => {
   }
   if (action === 'lock') openManualFactDialog();
 });
+canonAiNextStep.addEventListener('click', () => {
+  canonAiDialog.close();
+  importRole.value = 'canon';
+  importDialog.showModal();
+});
 document.querySelector('#close-manual-fact').addEventListener('click', () => { setManualFactError(); manualFactDialog.close(); });
 manualFactForm.addEventListener('submit', saveManualFact);
 document.addEventListener('click', (event) => {
+  const workflowAction = event.target.closest('[data-workflow-action]');
+  if (workflowAction) {
+    const action = workflowAction.dataset.workflowAction;
+    if (action === 'canon' || action === 'revision') {
+      importRole.value = action;
+      importDialog.showModal();
+    }
+    if (action === 'candidates') document.querySelector('#open-canon-ai').click();
+    if (action === 'lock') openManualFactDialog();
+    return;
+  }
   if (event.target.closest('[data-open-manual-fact]')) {
     openManualFactDialog();
     return;

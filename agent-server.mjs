@@ -121,6 +121,20 @@ async function reviewWithCloud(body) {
   }
 }
 
+async function extractCanonCandidatesWithCloud(body) {
+  if (!body.consent) throw new Error('AI canon extraction requires explicit consent.');
+  const canonText = String(body.canonText || '').trim();
+  if (!canonText) throw new Error('Import a canon source before generating AI candidates.');
+  const ai = createEnterpriseClient();
+  const prompt = `You are the storyIsStraight Canon Agent. Extract ONLY explicit, useful story facts from the supplied canon pages. Return concise JSON only with this exact shape: {"candidates":[{"type":"relationship|timeline|knowledge|motivation|prop|state|location|wardrobe|other","label":"one clear present-tense fact","why":"why protecting this matters","scene_label":"the bracketed scene label from the source","line_number":0,"evidence":"a short exact supporting excerpt"}]}. Include relationships, secrets/knowledge, timelines, motivations, props, character states, locations, or wardrobe only when stated or strongly established in the text. Do not invent facts, infer psychology, create spoilers, or write a fact without an evidence excerpt. Return at most 30 candidates. These are reviewable suggestions, not final canon.\n\nCANON SOURCE:\n${canonText.slice(0, 120000)}`;
+  const completion = await ai.models.generateContent({ model: process.env.GEMINI_MODEL || 'gemini-2.5-flash', contents: prompt, config: { responseMimeType: 'application/json', temperature: 0.1 } });
+  const raw = completion.text || '{"candidates":[]}';
+  let parsed;
+  try { parsed = JSON.parse(raw); } catch { throw new Error('Gemini returned an unreadable candidate list. Try again.'); }
+  const candidates = Array.isArray(parsed.candidates) ? parsed.candidates.slice(0, 30) : [];
+  return { candidates };
+}
+
 const server = createServer(async (request, response) => {
   if (request.url === '/api/health') return json(response, 200, { configured: configured(), provider: 'Gemini Enterprise + ClickHouse' });
   if (request.url === '/api/agent/review' && request.method === 'POST') {
@@ -128,6 +142,12 @@ const server = createServer(async (request, response) => {
     if (reviewRateLimited(request)) return json(response, 429, { error: 'Cloud review limit reached. Try again in 15 minutes.' });
     try { return json(response, 200, await reviewWithCloud(await readJson(request))); }
     catch (error) { return json(response, 400, { error: error.message || 'Cloud review failed.' }); }
+  }
+  if (request.url === '/api/agent/canon-candidates' && request.method === 'POST') {
+    if (!configured()) return json(response, 503, { error: 'AI canon extraction is not configured. Set Google Cloud and ClickHouse environment variables on the server.' });
+    if (reviewRateLimited(request)) return json(response, 429, { error: 'AI request limit reached. Try again in 15 minutes.' });
+    try { return json(response, 200, await extractCanonCandidatesWithCloud(await readJson(request))); }
+    catch (error) { return json(response, 400, { error: error.message || 'AI canon extraction failed.' }); }
   }
   const candidate = request.url === '/' ? '/index.html' : request.url.split('?')[0];
   const requestedPath = normalize(join(distDirectory, candidate));
