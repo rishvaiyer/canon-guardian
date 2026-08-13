@@ -527,6 +527,13 @@ function buildGraphEdges(nodes) {
 
 function makeGraphLayout(nodes, edges) {
   if (nodes.length === 1) return [[50, 48]];
+  if (nodes.length <= 8) {
+    // The default view is a readable local thread, not a force-directed cloud.
+    // Alternate lanes keep the chronological path legible on desktop and mobile.
+    const laneCount = Math.min(2, nodes.length);
+    const laneX = laneCount === 1 ? [50] : [34, 66];
+    return nodes.map((_, index) => [laneX[index % laneCount], 16 + (index * 68) / Math.max(1, nodes.length - 1)]);
+  }
   const positions = nodes.map((node, index) => [
     16 + (graphSeed(`${node.label}-${index}`) * 66),
     14 + (graphSeed(`${node.title}-${index}`) * 68)
@@ -563,6 +570,13 @@ function makeGraphLayout(nodes, edges) {
     });
   }
   return positions;
+}
+
+function readableAtlasNeighborhood(candidateNodes) {
+  if (showFullMap || candidateNodes.length <= 8) return candidateNodes.map((node, index) => ({ ...node, graphIndex: index }));
+  const radius = 3;
+  const start = Math.max(0, Math.min(activeGraphNode - radius, candidateNodes.length - (radius * 2 + 1)));
+  return candidateNodes.slice(start, start + (radius * 2 + 1)).map((node, index) => ({ ...node, graphIndex: start + index }));
 }
 
 function renderCharacterLens(allNodes) {
@@ -605,8 +619,8 @@ function filterAtlasNodes(allNodes) {
 
 function renderAtlasModes(allNodes, candidateCount) {
   atlasModes.querySelectorAll('[data-atlas-mode]').forEach((button) => button.classList.toggle('active', button.dataset.atlasMode === activeAtlasMode));
-  atlasExpand.hidden = candidateCount <= 36;
-  atlasExpand.textContent = showFullMap ? 'Use readable map ↙' : `Show all ${candidateCount || allNodes.length} scenes ↗`;
+  atlasExpand.hidden = candidateCount <= 8;
+  atlasExpand.textContent = showFullMap ? 'Use local impact view ↙' : `Show full map (${candidateCount || allNodes.length}) ↗`;
 }
 
 function renderSceneIndex(nodes) {
@@ -627,7 +641,7 @@ function renderStoryGraph(memory) {
   renderCharacterLens(allNodes);
   const atlasNodes = filterAtlasNodes(allNodes);
   const candidateNodes = activeCharacter === 'ALL' ? atlasNodes : atlasNodes.filter((node) => node.characters.includes(activeCharacter));
-  const nodes = showFullMap ? candidateNodes : candidateNodes.slice(0, 36);
+  const nodes = readableAtlasNeighborhood(candidateNodes);
   renderAtlasModes(allNodes, candidateNodes.length);
   activeGraphNode = Math.min(activeGraphNode, Math.max(0, candidateNodes.length - 1));
   renderSceneIndex(candidateNodes);
@@ -642,26 +656,29 @@ function renderStoryGraph(memory) {
   }
   const edges = buildGraphEdges(nodes);
   const positions = makeGraphLayout(nodes, edges);
-  const graphNodeIndex = Math.min(activeGraphNode, Math.max(0, nodes.length - 1));
+  const graphNodeIndex = Math.max(0, nodes.findIndex((node) => node.graphIndex === activeGraphNode));
   const toPoint = ([x, y]) => [x * 10, y * 5.6];
   const edgeLines = edges.order.map(([from, to]) => {
     const [x1, y1] = toPoint(positions[from]);
     const [x2, y2] = toPoint(positions[to]);
-    return `<line class="graph-edge order" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" />`;
+    return `<line class="graph-edge order" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" /><text class="graph-edge-label order" x="${(x1 + x2) / 2}" y="${(y1 + y2) / 2 - 5}">NEXT</text>`;
   });
   const threadLines = edges.character.map(([from, to]) => {
     const [x1, y1] = toPoint(positions[from]);
     const [x2, y2] = toPoint(positions[to]);
-    return `<line class="graph-edge character" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" />`;
+    return `<line class="graph-edge character" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" /><text class="graph-edge-label character" x="${(x1 + x2) / 2}" y="${(y1 + y2) / 2 + 10}">THREAD</text>`;
   });
   storyGraphLines.innerHTML = `${edgeLines.join('')}${threadLines.join('')}`;
-  storyGraphNodes.innerHTML = nodes.map((node, index) => `<button class="story-node ${index === graphNodeIndex ? 'active' : ''}" data-graph-node="${index}" style="left:${positions[index][0]}%;top:${positions[index][1]}%"><span>${escapeHtml(node.label)}</span><b>${escapeHtml(node.title)}</b>${node.characters.length ? `<small>${escapeHtml(node.characters.join(' · '))}</small>` : ''}</button>`).join('');
+  storyGraphNodes.innerHTML = nodes.map((node, index) => `<button class="story-node ${index === graphNodeIndex ? 'active' : ''}" data-graph-node="${node.graphIndex}" style="left:${positions[index][0]}%;top:${positions[index][1]}%"><span>${escapeHtml(node.label)}</span><b>${escapeHtml(node.title)}</b>${node.characters.length ? `<small>${escapeHtml(node.characters.join(' · '))}</small>` : ''}</button>`).join('');
   const selected = nodes[graphNodeIndex];
   const sceneFacts = (storyMemory?.facts || []).filter((fact) => fact.line.sceneLabel === selected.label || fact.line.sceneLabel.startsWith(`${selected.label}:`));
-  storyGraphDetail.innerHTML = `<p class="eyebrow">${escapeHtml(selected.label)} / ${memory ? 'IMPORTED SOURCE' : savedLedgerGraph ? 'SAVED CANON' : 'SAMPLE PROJECT'}</p><h3>${escapeHtml(selected.title)}</h3><p>${escapeHtml(selected.excerpt)}</p><span>${selected.characters.length ? `${escapeHtml(selected.characters.join(' · '))} thread` : 'No named character thread extracted'}</span>${sceneFacts.length ? `<button class="text-button graph-lock" data-lock-scene="${escapeHtml(selected.label)}">Lock ${sceneFacts.length} fact${sceneFacts.length === 1 ? '' : 's'} from this scene</button>` : ''}`;
+  const previous = nodes[graphNodeIndex - 1];
+  const next = nodes[graphNodeIndex + 1];
+  const connectionReason = [previous ? `follows ${previous.label}` : '', next ? `leads to ${next.label}` : '', selected.characters.length ? `${selected.characters.join(' · ')} thread` : 'no named thread'].filter(Boolean).join(' · ');
+  storyGraphDetail.innerHTML = `<p class="eyebrow">SELECTED SCENE / ${escapeHtml(selected.label)} / ${memory ? 'IMPORTED SOURCE' : savedLedgerGraph ? 'SAVED CANON' : 'SAMPLE PROJECT'}</p><h3>${escapeHtml(selected.title)}</h3><p>${escapeHtml(selected.excerpt)}</p><span>WHY CONNECTED · ${escapeHtml(connectionReason)}</span>${sceneFacts.length ? `<button class="text-button graph-lock" data-lock-scene="${escapeHtml(selected.label)}">Lock ${sceneFacts.length} fact${sceneFacts.length === 1 ? '' : 's'} from this scene</button>` : ''}`;
   storyGraphNote.textContent = memory
-    ? `${activeCharacter === 'ALL' ? '' : `${activeCharacter} · `}${nodes.length}${candidateNodes.length > nodes.length ? ` of ${candidateNodes.length}` : ''}${memory.sceneCount > allNodes.length && activeCharacter === 'ALL' ? ` of ${memory.sceneCount}` : ''} ${nodes.length === 1 ? 'scene or beat' : 'scenes or beats'} shown${activeAtlasMode !== 'all' ? ` · ${activeAtlasMode === 'evidence' ? 'evidence only' : 'break paths only'}` : ''}. Click a node to inspect its local thread.`
-    : savedLedgerGraph ? `${nodes.length} saved canon ${nodes.length === 1 ? 'scene' : 'scenes'} restored from this browser’s evidence ledger.` : activeAtlasMode === 'breaks' ? 'The sample graph is showing the linked break path in The Last Loop. Import a script to map your own scenes.' : activeAtlasMode === 'evidence' ? 'The sample graph is showing evidence-bearing scenes in The Last Loop. Import a script to map your own scenes.' : 'The sample graph links the fixed events that drive The Last Loop. Import a script to map every detected scene.';
+    ? `${activeCharacter === 'ALL' ? '' : `${activeCharacter} · `}${nodes.length}${candidateNodes.length > nodes.length ? ` of ${candidateNodes.length}` : ''} ${nodes.length === 1 ? 'scene' : 'scenes'} in the selected neighborhood${activeAtlasMode !== 'all' ? ` · ${activeAtlasMode === 'evidence' ? 'evidence only' : 'break paths only'}` : ''}. Click a node to move the neighborhood.`
+    : savedLedgerGraph ? `${nodes.length} saved canon ${nodes.length === 1 ? 'scene' : 'scenes'} restored from this browser’s evidence ledger. Select a row to see the local impact neighborhood.` : activeAtlasMode === 'breaks' ? 'This sample view isolates the scenes on the selected break path. Import a script to map your own evidence.' : activeAtlasMode === 'evidence' ? 'This sample view isolates scenes with approved evidence. Import a script to map your own canon.' : 'The map keeps order and character threads visible around the selected scene. Import a script to map your own continuity.';
 }
 
 function updatePrivacyNote(sourceCount) {
@@ -1535,7 +1552,6 @@ sceneIndexList.addEventListener('click', (event) => {
   const row = event.target.closest('[data-atlas-scene]');
   if (!row) return;
   activeGraphNode = Number(row.dataset.atlasScene);
-  if (activeGraphNode >= 36) showFullMap = true;
   renderStoryGraph(storyMemory);
   document.querySelector('.story-graph-panel')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 });
