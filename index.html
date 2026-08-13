@@ -30,6 +30,8 @@
           <h2 id="project-title">The Last Loop</h2>
           <p id="project-meta">Draft 4 · 10 pages</p>
           <div class="project-stats"><span id="canon-count">26 canon facts</span><span id="file-count">4 characters</span></div>
+          <div class="series-library" id="series-library" aria-live="polite"></div>
+          <button class="text-button clear-project" id="clear-project" type="button" hidden>Start a new local series</button>
         </div>
 
         <p class="privacy-note" id="privacy-note"><span class="lock">⌁</span> Sample project loaded. Imported scripts stay in this browser.</p>
@@ -146,7 +148,8 @@
       <div class="import-content">
         <p class="eyebrow">BUILD A LIVING SERIES BIBLE</p>
         <h2 id="import-title">Add the pages that make this world <em>true.</em></h2>
-        <p class="import-intro">Import a pilot, rewrite, episode, outline, or character document. storyIsStraight keeps each file in the project’s memory so future pages can be checked against it.</p>
+        <p class="import-intro">Build the canon first, then import a rewrite as an incoming revision. Your approved facts and source list stay in this browser.</p>
+        <label class="import-role" for="import-role"><span>THIS IMPORT IS</span><select id="import-role"><option value="canon">Canon source — add facts to the ledger</option><option value="revision">Incoming revision — compare against locked canon</option></select></label>
         <label class="drop-zone" id="drop-zone" for="script-upload">
           <input id="script-upload" type="file" accept=".txt,.fountain,.fdx,.pdf,.docx" multiple />
           <span class="upload-icon">↥</span>

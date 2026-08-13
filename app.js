@@ -67,12 +67,15 @@ const uploadInput = document.querySelector('#script-upload');
 const dropZone = document.querySelector('#drop-zone');
 const importQueue = document.querySelector('#import-queue');
 const importError = document.querySelector('#import-error');
+const importRole = document.querySelector('#import-role');
 const useImport = document.querySelector('#use-import');
 const projectTitle = document.querySelector('#project-title');
 const projectMeta = document.querySelector('#project-meta');
 const canonCount = document.querySelector('#canon-count');
 const fileCount = document.querySelector('#file-count');
 const privacyNote = document.querySelector('#privacy-note');
+const seriesLibrary = document.querySelector('#series-library');
+const clearProject = document.querySelector('#clear-project');
 const storyGraphNodes = document.querySelector('#story-graph-nodes');
 const storyGraphLines = document.querySelector('#story-graph-lines');
 const storyGraphDetail = document.querySelector('#story-graph-detail');
@@ -81,6 +84,9 @@ let activeKey = 'code';
 let activeGraphNode = 0;
 let stagedFiles = [];
 let storyMemory = null;
+let currentImportRole = 'canon';
+const projectStorageKey = 'story-is-straight-project-v2';
+let projectLedger = { title: '', sources: [], facts: [] };
 
 const sceneHeadingPattern = /^(?:INT\.?|EXT\.?|INT\/EXT\.?|I\/E\.?)/i;
 const speakerPattern = /^[A-Z][A-Z .'-]{1,34}$/;
@@ -101,6 +107,78 @@ function cleanName(value) {
 
 function sourceRef(line) {
   return `${line.file} · ${line.sceneLabel} · excerpt ${line.lineNumber}`;
+}
+
+function factId(fact) {
+  return `${fact.type}|${fact.label}|${fact.line.file}|${fact.line.lineNumber}`;
+}
+
+function storedFact(fact) {
+  return { id: factId(fact), type: fact.type, label: fact.label, detail: fact.detail, line: { ...fact.line }, locked: false };
+}
+
+function readProjectLedger() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(projectStorageKey) || 'null');
+    if (stored?.sources && stored?.facts) projectLedger = stored;
+  } catch {
+    projectLedger = { title: '', sources: [], facts: [] };
+  }
+}
+
+function saveProjectLedger() {
+  try { localStorage.setItem(projectStorageKey, JSON.stringify(projectLedger)); } catch { /* Browser storage can be unavailable or full. */ }
+}
+
+function mergeFactsIntoLedger(facts) {
+  facts.forEach((fact) => {
+    const candidate = storedFact(fact);
+    if (!projectLedger.facts.some((saved) => saved.id === candidate.id)) projectLedger.facts.push(candidate);
+  });
+}
+
+function visibleLedgerFacts() {
+  const all = [...projectLedger.facts];
+  (storyMemory?.facts || []).forEach((fact) => {
+    const candidate = storedFact(fact);
+    if (!all.some((saved) => saved.id === candidate.id)) all.push(candidate);
+  });
+  return all;
+}
+
+function renderSeriesLibrary() {
+  const locked = projectLedger.facts.filter((fact) => fact.locked).length;
+  if (!projectLedger.sources.length) {
+    seriesLibrary.innerHTML = '';
+    clearProject.hidden = true;
+    return;
+  }
+  clearProject.hidden = false;
+  seriesLibrary.innerHTML = `<div><b>${projectLedger.sources.length} ${projectLedger.sources.length === 1 ? 'source' : 'sources'} · ${locked} locked</b></div>${projectLedger.sources.slice(-3).reverse().map((source) => `<div class="series-source"><span>${escapeHtml(source.name)}</span><b>${source.role === 'revision' ? 'REVISION' : 'CANON'}</b></div>`).join('')}`;
+}
+
+function renderLedgerFacts() {
+  const factRoot = document.querySelector('.fact-list');
+  const cards = visibleLedgerFacts().slice(0, 8);
+  if (!cards.length) {
+    factRoot.innerHTML = '<p class="empty-queue">No explicit lockable facts were found yet. Add scene headings and concrete actions to improve local checks.</p>';
+    return;
+  }
+  factRoot.innerHTML = cards.map((fact, index) => `<button class="fact" data-lock-fact="${escapeHtml(fact.id)}"><span class="fact-index">${String(index + 1).padStart(2, '0')}</span><span><b>${escapeHtml(fact.label)}</b><small>${escapeHtml(fact.detail)} · ${escapeHtml(sourceRef(fact.line))}</small></span><span class="fact-state ${fact.locked ? 'locked' : ''}">${fact.locked ? 'LOCKED' : 'LOCK'}</span></button>`).join('');
+}
+
+function refreshSavedProject() {
+  const locked = projectLedger.facts.filter((fact) => fact.locked).length;
+  if (projectLedger.sources.length) {
+    const firstCanon = projectLedger.sources.find((source) => source.role === 'canon') || projectLedger.sources[0];
+    projectTitle.textContent = projectLedger.title || firstCanon.name.replace(/\.[^.]+$/, '');
+    projectMeta.textContent = `${projectLedger.sources.length} saved ${projectLedger.sources.length === 1 ? 'source' : 'sources'} · browser-local`;
+    canonCount.textContent = `${locked} locked facts`;
+    fileCount.textContent = `${projectLedger.sources.length} series ${projectLedger.sources.length === 1 ? 'source' : 'sources'}`;
+    updatePrivacyNote(projectLedger.sources.length);
+  }
+  renderSeriesLibrary();
+  renderLedgerFacts();
 }
 
 function lineHasCharacter(line, character) {
@@ -231,16 +309,20 @@ function analyzeImportedMemory(memory) {
 }
 
 function renderImportedFacts(memory) {
-  const factRoot = document.querySelector('.fact-list');
-  const cards = memory.facts.slice(0, 6);
-  if (!cards.length) {
-    factRoot.innerHTML = '<p class="empty-queue">No explicit lockable facts were found yet. Add scene headings and concrete actions to improve local checks.</p>';
-    return;
-  }
-  factRoot.innerHTML = cards.map((fact, index) => `<div class="fact"><span class="fact-index">${String(index + 1).padStart(2, '0')}</span><span><b>${escapeHtml(fact.label)}</b><small>${escapeHtml(fact.detail)} · ${escapeHtml(sourceRef(fact.line))}</small></span><span class="fact-arrow">⌁</span></div>`).join('');
+  if (memory) renderLedgerFacts();
 }
 
 function deriveStoryGraph(memory) {
+  if (!memory && projectLedger.facts.length) {
+    const savedScenes = new Map();
+    projectLedger.facts.forEach((fact) => {
+      const key = `${fact.line.file}|${fact.line.sceneLabel}`;
+      if (!savedScenes.has(key)) savedScenes.set(key, { label: fact.line.sceneLabel.split(':')[0], title: fact.label, characters: [], excerpt: cleanExcerpt(fact.line.text, 132) });
+      const character = fact.label.match(/^([A-Z][A-Z' -]{1,34})\s+is\b/)?.[1];
+      if (character && !savedScenes.get(key).characters.includes(character)) savedScenes.get(key).characters.push(character);
+    });
+    return [...savedScenes.values()];
+  }
   if (!memory) return [
     { label: 'Scene 7', title: 'Jonah dies', characters: ['MAYA', 'JONAH'], excerpt: 'The fixed point of the loop.' },
     { label: 'Scene 11', title: 'Maya fractures her wrist', characters: ['MAYA'], excerpt: 'A physical constraint is established.' },
@@ -336,6 +418,7 @@ function makeGraphLayout(nodes, edges) {
 
 function renderStoryGraph(memory) {
   const nodes = deriveStoryGraph(memory);
+  const savedLedgerGraph = !memory && projectLedger.facts.length > 0;
   const edges = buildGraphEdges(nodes);
   const positions = makeGraphLayout(nodes, edges);
   activeGraphNode = Math.min(activeGraphNode, Math.max(0, nodes.length - 1));
@@ -353,10 +436,11 @@ function renderStoryGraph(memory) {
   storyGraphLines.innerHTML = `${edgeLines.join('')}${threadLines.join('')}`;
   storyGraphNodes.innerHTML = nodes.map((node, index) => `<button class="story-node ${index === activeGraphNode ? 'active' : ''}" data-graph-node="${index}" style="left:${positions[index][0]}%;top:${positions[index][1]}%"><span>${escapeHtml(node.label)}</span><b>${escapeHtml(node.title)}</b>${node.characters.length ? `<small>${escapeHtml(node.characters.join(' · '))}</small>` : ''}</button>`).join('');
   const selected = nodes[activeGraphNode];
-  storyGraphDetail.innerHTML = `<p class="eyebrow">${escapeHtml(selected.label)} / ${memory ? 'IMPORTED SOURCE' : 'SAMPLE PROJECT'}</p><h3>${escapeHtml(selected.title)}</h3><p>${escapeHtml(selected.excerpt)}</p><span>${selected.characters.length ? `${escapeHtml(selected.characters.join(' · '))} thread` : 'No named character thread extracted'}</span>`;
+  const sceneFacts = (storyMemory?.facts || []).filter((fact) => fact.line.sceneLabel === selected.label || fact.line.sceneLabel.startsWith(`${selected.label}:`));
+  storyGraphDetail.innerHTML = `<p class="eyebrow">${escapeHtml(selected.label)} / ${memory ? 'IMPORTED SOURCE' : savedLedgerGraph ? 'SAVED CANON' : 'SAMPLE PROJECT'}</p><h3>${escapeHtml(selected.title)}</h3><p>${escapeHtml(selected.excerpt)}</p><span>${selected.characters.length ? `${escapeHtml(selected.characters.join(' · '))} thread` : 'No named character thread extracted'}</span>${sceneFacts.length ? `<button class="text-button graph-lock" data-lock-scene="${escapeHtml(selected.label)}">Lock ${sceneFacts.length} fact${sceneFacts.length === 1 ? '' : 's'} from this scene</button>` : ''}`;
   storyGraphNote.textContent = memory
     ? `${nodes.length} ${nodes.length === 1 ? 'scene or beat' : 'scenes or beats'} mapped from imported pages. Click a node to inspect its local thread.`
-    : 'The sample graph links the fixed events that drive The Last Loop. Import a script to map every detected scene.';
+    : savedLedgerGraph ? `${nodes.length} saved canon ${nodes.length === 1 ? 'scene' : 'scenes'} restored from this browser’s evidence ledger.` : 'The sample graph links the fixed events that drive The Last Loop. Import a script to map every detected scene.';
 }
 
 function updatePrivacyNote(sourceCount) {
@@ -399,12 +483,21 @@ function renderNoImportedBreaks() {
   response.innerHTML = '<span class="response-kicker">LOCAL MEMORY READY</span><p>I found no explicit state reversals in the imported pages. This is a deterministic first-pass check, so editor review remains the source of truth.</p>';
 }
 
+function revisionReviewMemory() {
+  const locks = projectLedger.facts.filter((fact) => fact.locked);
+  if (currentImportRole !== 'revision' || !locks.length || !storyMemory) return storyMemory;
+  const lockedLines = locks.map((fact, index) => ({ ...fact.line, index: index - locks.length - 1 }));
+  const revisionLines = storyMemory.lines.map((line, index) => ({ ...line, index: index + 1 }));
+  return { facts: locks, lines: [...lockedLines, ...revisionLines], characters: storyMemory.characters };
+}
+
 document.querySelector('#run-analysis').addEventListener('click', () => {
   const button = document.querySelector('#run-analysis');
   button.disabled = true;
   button.textContent = storyMemory ? 'Checking story memory…' : 'Reading revision…';
   status.textContent = 'Story agent is extracting people, objects, knowledge, time, and irreversible events.';
-  statusMeta.textContent = storyMemory ? `Checking local sources against ${storyMemory.facts.length} extracted facts` : 'Checking 4 claims against 26 facts';
+  const lockedFacts = projectLedger.facts.filter((fact) => fact.locked).length;
+  statusMeta.textContent = storyMemory ? (currentImportRole === 'revision' && lockedFacts ? `Comparing revision against ${lockedFacts} locked facts` : `Checking local sources against ${storyMemory.facts.length} extracted facts`) : 'Checking 4 claims against 26 facts';
   setTimeout(() => {
     button.innerHTML = '<span class="spark">✦</span> Analysis complete';
     button.disabled = false;
@@ -414,7 +507,7 @@ document.querySelector('#run-analysis').addEventListener('click', () => {
       renderImpact('code');
       return;
     }
-    issues = analyzeImportedMemory(storyMemory);
+    issues = analyzeImportedMemory(revisionReviewMemory());
     const importedKeys = Object.keys(issues);
     if (!importedKeys.length) {
       status.textContent = 'No deterministic canon breaks found. The local ledger is ready for the next revision.';
@@ -424,7 +517,7 @@ document.querySelector('#run-analysis').addEventListener('click', () => {
     }
     activeKey = importedKeys[0];
     status.textContent = `${importedKeys.length} source-backed ${importedKeys.length === 1 ? 'break' : 'breaks'} found. Each alert includes the exact earlier and later claims.`;
-    statusMeta.textContent = `${importedKeys.length} breaks · ${storyMemory.facts.length} extracted facts · local-only`;
+    statusMeta.textContent = `${importedKeys.length} breaks · ${lockedFacts || storyMemory.facts.length} ${lockedFacts ? 'locked' : 'extracted'} facts · local-only`;
     renderImpact(activeKey);
   }, storyMemory ? 450 : 1200);
 });
@@ -537,14 +630,19 @@ async function buildStoryMemory() {
     const totalPages = extracted.reduce((total, file) => total + file.pages, 0);
     const primaryFile = extracted[0].file;
     storyMemory = buildLocalStoryMemory(extracted);
+    currentImportRole = importRole.value;
+    if (!projectLedger.title || currentImportRole === 'canon') projectLedger.title = primaryFile.name.replace(/\.[^.]+$/, '');
+    projectLedger.sources.push(...extracted.map((entry) => ({ name: entry.file.name, role: currentImportRole, scenes: entry.scenes, pages: entry.pages, addedAt: Date.now() })));
+    if (currentImportRole === 'canon') mergeFactsIntoLedger(storyMemory.facts);
+    saveProjectLedger();
     projectTitle.textContent = primaryFile.name.replace(/\.[^.]+$/, '');
-    projectMeta.textContent = `${extracted.length} source ${extracted.length === 1 ? 'file' : 'files'} · ${totalScenes || totalPages || 'story'} ${totalScenes === 1 ? 'scene' : totalScenes ? 'scenes' : totalPages === 1 ? 'page' : totalPages ? 'pages' : 'indexed'}`;
-    canonCount.textContent = `${storyMemory.facts.length} extracted facts`;
-    fileCount.textContent = `${extracted.length} source ${extracted.length === 1 ? 'file' : 'files'}`;
-    updatePrivacyNote(extracted.length);
-    status.textContent = `${storyMemory.facts.length} explicit story facts were indexed locally from ${extracted.length} ${extracted.length === 1 ? 'source' : 'sources'}. Run the check to compare their states.`;
+    projectMeta.textContent = `${currentImportRole === 'revision' ? 'Revision' : 'Canon'} · ${totalScenes || totalPages || 'story'} ${totalScenes === 1 ? 'scene' : totalScenes ? 'scenes' : totalPages === 1 ? 'page' : totalPages ? 'pages' : 'indexed'}`;
+    status.textContent = currentImportRole === 'revision'
+      ? `${storyMemory.facts.length} revision claims extracted locally. Lock approved facts or run the check against your saved canon.`
+      : `${storyMemory.facts.length} canon candidates were indexed locally. Lock the facts that are true before reviewing a revision.`;
     statusMeta.textContent = `${totalScenes || totalPages || storyMemory.lines.length} scenes or lines ready · local-only`;
-    stagedFiles = extracted;
+    stagedFiles = [];
+    refreshSavedProject();
     renderImportedFacts(storyMemory);
     renderStoryGraph(storyMemory);
     renderImportQueue();
@@ -581,6 +679,26 @@ importQueue.addEventListener('click', (event) => {
 }));
 dropZone.addEventListener('drop', (event) => addFiles(event.dataTransfer.files));
 
+function lockFact(id) {
+  let saved = projectLedger.facts.find((fact) => fact.id === id);
+  if (!saved) {
+    const current = (storyMemory?.facts || []).find((fact) => factId(fact) === id);
+    if (!current) return;
+    saved = storedFact(current);
+    projectLedger.facts.push(saved);
+  }
+  saved.locked = true;
+  saveProjectLedger();
+  refreshSavedProject();
+  status.textContent = `${saved.label} is now locked in this browser’s canon ledger.`;
+  statusMeta.textContent = `${projectLedger.facts.filter((fact) => fact.locked).length} locked facts · local-only`;
+}
+
+document.querySelector('.fact-list').addEventListener('click', (event) => {
+  const fact = event.target.closest('[data-lock-fact]');
+  if (fact) lockFact(fact.dataset.lockFact);
+});
+
 document.querySelectorAll('.nav-item').forEach((link) => link.addEventListener('click', () => {
   document.querySelectorAll('.nav-item').forEach((item) => {
     const active = item === link;
@@ -597,5 +715,24 @@ storyGraphNodes.addEventListener('click', (event) => {
   renderStoryGraph(storyMemory);
 });
 
+storyGraphDetail.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-lock-scene]');
+  if (!button || !storyMemory) return;
+  const facts = storyMemory.facts.filter((fact) => fact.line.sceneLabel === button.dataset.lockScene || fact.line.sceneLabel.startsWith(`${button.dataset.lockScene}:`));
+  facts.forEach((fact) => lockFact(factId(fact)));
+});
+
+clearProject.addEventListener('click', () => {
+  if (!window.confirm('Start a new local series? This removes saved source names and locked facts from this browser.')) return;
+  localStorage.removeItem(projectStorageKey);
+  projectLedger = { title: '', sources: [], facts: [] };
+  storyMemory = null;
+  currentImportRole = 'canon';
+  window.location.reload();
+});
+
 renderImpact(activeKey);
+renderStoryGraph();
+readProjectLedger();
+refreshSavedProject();
 renderStoryGraph();
