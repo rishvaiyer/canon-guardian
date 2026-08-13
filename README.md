@@ -1,64 +1,171 @@
 # CanonCue
 
-**Get your story straight.** Evidence-backed continuity intelligence for authors, writers' rooms, filmmakers, and any long-form story world.
+**Get your story straight.**
 
-## Try the live demo
+CanonCue is an evidence-first continuity workspace for authors, writers’ rooms, filmmakers, novelists, playwrights, and anyone maintaining a story across chapters, episodes, or revisions.
 
-- Hosted app: https://app-production-517f.up.railway.app/
-- Source: https://github.com/rishvaiyer/canon-guardian
-- Synthetic walkthrough files: [`demo/episode-01-canon.txt`](demo/episode-01-canon.txt) and [`demo/episode-02-revision.txt`](demo/episode-02-revision.txt)
+> CanonCue remembers what is true, proves what changed, and shows the smallest repair before one bad line breaks the season.
 
-The fastest walkthrough is: import Episode 1 as **Canon source**, lock the facts, import Episode 2 as **Incoming revision**, run the local continuity check, then open the impact map. For a PDF source with a contradiction, use **Download annotated PDF** to receive a local marked-up copy plus an evidence appendix.
+## Live demo
 
-## What this MVP demonstrates
+- **App:** [app-production-517f.up.railway.app](https://app-production-517f.up.railway.app/)
+- **Repository:** [github.com/rishvaiyer/canon-guardian](https://github.com/rishvaiyer/canon-guardian)
+- **Synthetic walkthrough:** [`demo/episode-01-canon.txt`](demo/episode-01-canon.txt) → [`demo/episode-02-revision.txt`](demo/episode-02-revision.txt)
 
-- Browser-local import for manuscript chapters, screenplays, teleplays, plays, treatments, outlines, and other page-based drafts in PDF, `.docx`, `.txt`, Fountain, and Final Draft `.fdx`.
-- A persistent local story bible: source roles, evidence metadata, and writer-approved locks survive refreshes. Full source text does not persist.
-- A deterministic canon ledger for explicit deaths, injuries, object states, and numeric-code reveals.
-- Source-backed contradiction alerts with earlier/later evidence, repair framing, and a downstream impact map.
-- An Obsidian-style story graph connecting scenes/beats through story order and shared-character threads.
-- An opt-in cloud evidence review that retrieves approved canon from ClickHouse through the official ClickHouse MCP server and asks a Gemini Enterprise continuity agent to evaluate the current incoming draft.
-- A structured Continuity Crew analysis contract: eight finding types, evidence-index validation, impact scope, and ranked repair plans that score canon preservation, downstream risk, edit effort, and confidence.
-- Remembered light and dark workspace modes.
+The demo files are original synthetic fiction created for this repository. They are safe to use in a public walkthrough.
 
-The included project, **The Last Loop**, is original demo data. The default workflow reads supported story source files locally in the browser and does not upload them. Its local analysis intentionally covers explicit, source-backed state changes only; Gemini is used only after the writer explicitly opts into cloud evidence review. It works best when drafts use scene or chapter headings and concrete page action.
+## The five-minute walkthrough
 
-## Gemini Enterprise + ClickHouse agent
+1. Open the app and choose **Start with canon**.
+2. Import `demo/episode-01-canon.txt` as **Canon source**.
+3. Review the extracted facts and lock the states you want to protect.
+4. Import `demo/episode-02-revision.txt` as **Incoming draft**.
+5. Choose **Check continuity** for the private browser-local pass.
+6. Open the **Review Inbox** and select a finding.
+7. Inspect the source-backed evidence, downstream impact, and **Repair Simulator**.
+8. Select a scene in the **Continuity Map** to see its nearby `NEXT` and `THREAD` connections.
+9. Open **Download outputs** to export the ledger, review, map, project bundle, or source files.
 
-The local workflow is the default. Cloud review is an explicit, per-review opt-in: it sends only the current incoming-draft text and user-locked canon evidence to the configured cloud services. The server stores evidence rows in ClickHouse; it does not persist the full draft there. `Ask the canon` is a grounded Q&A path that sends only the writer's question and locked evidence, validates Gemini's citation indexes against retrieved ClickHouse rows, and returns `not_found` when the canon cannot support an answer.
+The synthetic revision intentionally breaks four established states: Jonah’s death, Maya’s wrist injury, the phone’s dead state, and the timing of the locker-code reveal.
 
-ClickHouse is the durable evidence ledger: it keeps approved fact rows with source, scene, line, and excerpt metadata so a season-long project can retrieve the same canon later. Gemini is the reasoning layer, not the database. The server runs the official [`mcp-clickhouse`](https://github.com/ClickHouse/mcp-clickhouse) HTTP sidecar locally and uses the Model Context Protocol `run_query` tool for read-only canon retrieval. This gives the continuity agent a governed, inspectable tool boundary instead of an opaque database call.
+## What is shipped
 
-1. Copy `.env.example` to your secret store or local environment. Authenticate local development with Application Default Credentials (`gcloud auth application-default login`); hosted deployments use a sealed service-account JSON variable. Set your Google Cloud project/location, enable billing and Gemini Enterprise Agent Platform, and configure a private ClickHouse service.
-2. Build the app and run the combined app/API server:
+### Local-first story memory
 
-```bash
-npm run build
-npm run serve
-```
+- Imports PDF, Word `.docx`, `.txt`, Fountain, and Final Draft `.fdx` in the browser.
+- Extracts scene-aware lines and explicit story states locally.
+- Detects supported reversals involving deaths, injuries, phone/object state, and numeric-code reveals.
+- Persists project title, source metadata, evidence metadata, candidates, and writer-approved locks in browser storage.
+- Does **not** persist full screenplay text after refresh and does not upload a local import during the default workflow.
 
-The production Docker image starts the read-only `mcp-clickhouse` sidecar before the Node API. Set `CLICKHOUSE_MCP_AUTH_TOKEN` in the hosting provider's secret store; the sidecar listens on localhost and is never exposed as a public endpoint.
+### Evidence-led review
 
-For local UI development, run `npm start` and `npm run serve` in separate terminals; Vite proxies `/api` to the agent server.
+- Review Inbox surfaces open findings first.
+- Every finding includes earlier/later evidence, severity, and downstream beats to inspect.
+- Repair Simulator compares the current claim with a proposed smallest edit. It is preview-only; CanonCue never changes a draft automatically.
+- PDF imports can produce a locally annotated copy with source highlights and a review appendix. The original PDF is never modified.
 
-The `AI evidence review`, `Generate canon`, and `Ask the canon` buttons intentionally fail closed until the cloud service is configured and the writer checks the relevant consent box. Every cloud response includes a visible agent trace and keeps human approval in the loop.
+### Continuity Map
 
-The cloud path is deliberately separate from the local path: the browser sends the current incoming draft and approved evidence only after explicit consent; the server stores approved evidence rows in ClickHouse and asks Gemini for structured, evidence-cited findings. The local checker remains available offline and is the default review path.
+- The complete scene index is the primary browsing surface.
+- Selecting a scene shows a bounded local neighborhood instead of a decorative graph cloud.
+- `NEXT` edges show story order; `THREAD` edges show consecutive shared-character continuity.
+- The selected scene explains **WHY CONNECTED** and exposes evidence when available.
+- Full-map mode remains available for longer scripts.
 
-Each cloud review returns `analysis_version: continuity-crew-v2`. Unsupported Gemini findings without a valid ClickHouse evidence index are excluded before the response reaches the UI. Repair options remain backward-compatible strings in `repair_options`, with richer ranked objects in `repair_plan` and aggregate `metrics` for downstream UI or evaluation.
+### Portable outputs
 
-## Submission/runtime notes
+**Download outputs** can create:
 
-- The included demo material is original synthetic fiction created for this repository; it is not a real screenplay.
-- The app supports PDF, `.docx`, `.txt`, Fountain, and Final Draft `.fdx` imports. Full source text is not persisted in browser storage.
-- The public demo is configured with Gemini Enterprise and ClickHouse on Railway. Do not paste credentials into the frontend or commit `.env` files.
-- This repository is licensed under the MIT License.
+- JSON project bundle with ledger, findings, and map metadata
+- Markdown canon ledger
+- Markdown continuity review
+- CSV Continuity Map
+- Untouched imported source files during the active browser session
+- Annotated source PDF when a PDF revision has findings
 
-## Run
+## Optional Gemini + ClickHouse layer
+
+The local checker is the default and remains available offline. The cloud layer is explicit and consent-gated.
+
+| Component | Responsibility |
+| --- | --- |
+| **Gemini Enterprise** | Proposes canon candidates, answers grounded canon questions, and reasons over the incoming draft |
+| **ClickHouse** | Stores approved evidence rows for durable season/series retrieval |
+| **ClickHouse MCP** | Provides a localhost-only, read-only `run_query` tool boundary for evidence retrieval |
+| **CanonCue server** | Validates evidence indexes, normalizes findings, scores repair plans, and keeps secrets server-side |
+| **Writer** | Approves locks, reviews findings, and decides whether a repair is accepted |
+
+Cloud review sends only the current incoming-draft text plus writer-approved canon evidence after consent. `Ask locked canon` sends the question plus locked evidence. Unsupported answers return `not_found`; unsupported Gemini findings without valid evidence indexes are excluded before reaching the UI.
+
+Cloud review responses use `analysis_version: continuity-crew-v2` and support eight finding types:
+
+`direct_contradiction`, `timeline_impossibility`, `knowledge_leak`, `character_state_conflict`, `relationship_drift`, `prop_location_mismatch`, `setup_payoff_gap`, and `needs_review`.
+
+The response also includes evidence-backed impact scope, confidence, repair options, scored `repair_plan` entries, and aggregate metrics.
+
+## Run locally
+
+Requirements: Node.js 22+ and npm.
 
 ```bash
 npm install
 npm start
 ```
 
-Open the local URL shown in the terminal.
+Open the Vite URL shown in the terminal. The browser-local workflow works without Google Cloud or ClickHouse.
+
+To run the API server for the optional cloud layer, use a second terminal:
+
+```bash
+cp .env.example .env
+npm run serve
+```
+
+When using `npm start`, Vite proxies `/api` requests to `http://localhost:8787`. The production-style combined server is:
+
+```bash
+npm run build
+npm run serve
+```
+
+## Configure the optional cloud layer
+
+Never commit `.env`, service-account JSON, API keys, or ClickHouse credentials. Use a secret manager or hosting-provider variables.
+
+1. Authenticate local Google Application Default Credentials:
+
+   ```bash
+   gcloud auth application-default login
+   ```
+
+2. Set the variables in [`.env.example`](.env.example).
+3. Enable the required Google Cloud APIs and billing in your own project.
+4. Provide a private ClickHouse instance and credentials.
+5. Start the official `mcp-clickhouse` sidecar through `start.sh` or your deployment runtime.
+
+The sidecar binds to `127.0.0.1` only. `CLICKHOUSE_MCP_AUTH_TOKEN` is an internal secret between the Node API and MCP sidecar.
+
+The UI fails closed when the cloud service, prerequisites, or consent are missing. A cloud response displays the agent trace and keeps human approval required.
+
+## Quality checks
+
+```bash
+npm run check
+npm run check:server
+npm run test:analysis
+npm run build
+npm audit --omit=dev --audit-level=high
+git diff --check
+```
+
+## Deploy on Railway
+
+The repository includes [`railway.json`](railway.json), [`Dockerfile`](Dockerfile), and [`start.sh`](start.sh).
+
+```bash
+railway up -y --service <app-service-id>
+```
+
+The Docker runtime:
+
+1. Builds the Vite app.
+2. Installs the official `mcp-clickhouse` tool.
+3. Starts the localhost-only MCP sidecar.
+4. Waits for the sidecar health check.
+5. Starts the Node API and serves the app.
+
+Railway health check: `/api/health`.
+
+## Privacy and product boundaries
+
+- Local imports stay in the browser by default.
+- Full source text is intentionally not persisted in `localStorage`.
+- Cloud review is opt-in per action and rate-limited server-side.
+- Locked evidence is durable in ClickHouse only when the cloud workflow is explicitly used.
+- Gemini proposes; it does not lock facts or rewrite drafts automatically.
+- The demo uses synthetic fiction, not a real screenplay.
+
+## License
+
+[MIT](LICENSE)
