@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#111312" />
-    <title>storyIsStraight — The Last Loop</title>
+    <title>storyIsStraight — Story continuity for every draft</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Lora:ital,wght@0,400;0,500;1,400;1,500&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -26,7 +26,7 @@
         </nav>
 
         <div class="project-card">
-          <p class="eyebrow">ACTIVE PROJECT</p>
+          <p class="eyebrow">ACTIVE STORY WORLD</p>
           <h2 id="project-title">The Last Loop</h2>
           <p id="project-meta">Draft 4 · 10 pages</p>
           <div class="project-stats"><span id="canon-count">26 canon facts</span><span id="file-count">4 characters</span></div>
@@ -40,19 +40,20 @@
       <section class="workspace" id="top">
         <header class="topbar">
           <div>
-            <p class="eyebrow">STORY INTELLIGENCE / REVISION REVIEW</p>
+            <p class="eyebrow">STORY INTELLIGENCE FOR AUTHORS, FILM &amp; TELEVISION</p>
             <h1>Get your story <em>straight.</em></h1>
+            <p class="audience-line">Novels · TV series · films · stage · audio drama · any evolving draft</p>
           </div>
           <div class="top-actions">
             <button class="theme-button" id="theme-toggle" type="button" aria-pressed="false" title="Switch to light mode"><span aria-hidden="true">☼</span> Light</button>
-            <button class="secondary-button" id="open-upload">+ Add to story</button>
-            <button class="primary-button" id="run-analysis"><span class="spark">✦</span> Run story check</button>
+            <button class="secondary-button" id="open-upload">+ Add pages</button>
+            <button class="primary-button" id="run-analysis"><span class="spark">✦</span> Check continuity</button>
           </div>
         </header>
 
         <section class="status-strip" aria-live="polite">
           <span class="pulse"></span>
-          <span id="analysis-status">Story agent is ready to compare Revision 4 against the locked story ledger.</span>
+          <span id="analysis-status">Your story workspace is ready to compare the next draft against locked canon.</span>
           <span class="status-meta" id="status-meta">26 facts indexed · 0 checks running</span>
         </section>
 
@@ -60,7 +61,7 @@
           <section class="scene-panel">
             <div class="section-heading">
               <div>
-                <p class="eyebrow">INCOMING REVISION</p>
+                <p class="eyebrow">INCOMING DRAFT</p>
                 <h2>Scene 19 — <em>The Locker</em></h2>
               </div>
               <span class="page-chip">PAGES 8–9</span>
@@ -128,7 +129,7 @@
         <section class="story-map-section" id="story-map">
           <div class="impact-head">
             <div>
-              <p class="eyebrow">WHOLE SCRIPT VIEW</p>
+              <p class="eyebrow">WHOLE STORY VIEW</p>
               <h2>Your story, <em>connected.</em></h2>
             </div>
             <div class="graph-legend"><span class="legend-line order"></span> scene order <span class="legend-line character"></span> shared character</div>
@@ -146,14 +147,14 @@
     <dialog class="import-dialog" id="import-dialog" aria-labelledby="import-title">
       <div class="dialog-topline"><span>STORY LIBRARY / LOCAL IMPORT</span><button class="close-dialog" id="close-upload" aria-label="Close import">×</button></div>
       <div class="import-content">
-        <p class="eyebrow">BUILD A LIVING SERIES BIBLE</p>
+          <p class="eyebrow">BUILD A LIVING STORY BIBLE</p>
         <h2 id="import-title">Add the pages that make this world <em>true.</em></h2>
-        <p class="import-intro">Build the canon first, then import a rewrite as an incoming revision. Your approved facts and source list stay in this browser.</p>
-        <label class="import-role" for="import-role"><span>THIS IMPORT IS</span><select id="import-role"><option value="canon">Canon source — add facts to the ledger</option><option value="revision">Incoming revision — compare against locked canon</option></select></label>
+        <p class="import-intro">Add a manuscript chapter, screenplay, teleplay, episode, play, treatment, or outline. Build canon first, then compare the next draft against it.</p>
+        <label class="import-role" for="import-role"><span>THIS IMPORT IS</span><select id="import-role"><option value="canon">Canon source — add facts to the story bible</option><option value="revision">Incoming draft — compare against locked canon</option></select></label>
         <label class="drop-zone" id="drop-zone" for="script-upload">
           <input id="script-upload" type="file" accept=".txt,.fountain,.fdx,.pdf,.docx" multiple />
           <span class="upload-icon">↥</span>
-          <span class="upload-title">Drop scripts here or choose files</span>
+          <span class="upload-title">Drop pages here or choose files</span>
           <span class="upload-help">Local extraction: PDF, Word .docx, .txt, Fountain, and Final Draft .fdx. No front-end file-size cap.</span>
         </label>
         <div class="import-queue" id="import-queue" aria-live="polite">
