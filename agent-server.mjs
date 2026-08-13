@@ -20,6 +20,14 @@ function configured() {
   return Boolean(process.env.GOOGLE_CLOUD_PROJECT && process.env.CLICKHOUSE_HOST && Object.hasOwn(process.env, 'CLICKHOUSE_PASSWORD'));
 }
 
+function clickhouseUrl() {
+  const host = String(process.env.CLICKHOUSE_HOST || '').trim();
+  if (/^https?:\/\//i.test(host)) return host;
+  const secure = String(process.env.CLICKHOUSE_SECURE || 'true').toLowerCase() === 'true';
+  const port = process.env.CLICKHOUSE_PORT || (secure ? '8443' : '8123');
+  return `${secure ? 'https' : 'http'}://${host}:${port}`;
+}
+
 async function clickHouseMcpHealthy() {
   const endpoint = process.env.CLICKHOUSE_MCP_URL || 'http://127.0.0.1:8000/mcp';
   try {
@@ -119,7 +127,7 @@ async function reviewWithCloud(body) {
 
   const projectId = safeProjectName(body.projectTitle);
   const clickhouse = createClient({
-    url: process.env.CLICKHOUSE_HOST,
+    url: clickhouseUrl(),
     username: process.env.CLICKHOUSE_USER || 'default',
     password: process.env.CLICKHOUSE_PASSWORD
   });
@@ -193,7 +201,7 @@ async function askCanonWithCloud(body) {
   const lockedFacts = Array.isArray(body.lockedFacts) ? body.lockedFacts.slice(0, 120) : [];
   if (!question || !lockedFacts.length) throw new Error('Ask a question and lock at least one canon fact first.');
   const projectId = safeProjectName(body.projectTitle);
-  const clickhouse = createClient({ url: process.env.CLICKHOUSE_HOST, username: process.env.CLICKHOUSE_USER || 'default', password: process.env.CLICKHOUSE_PASSWORD });
+  const clickhouse = createClient({ url: clickhouseUrl(), username: process.env.CLICKHOUSE_USER || 'default', password: process.env.CLICKHOUSE_PASSWORD });
   try {
     await clickhouse.exec({ query: `CREATE DATABASE IF NOT EXISTS ${clickhouseDatabase}` });
     await clickhouse.exec({ query: `CREATE TABLE IF NOT EXISTS ${clickhouseDatabase}.canon_evidence (project_id String, fact_id String, label String, fact_type String, source_name String, scene_label String, line_number UInt32, excerpt String, locked_at DateTime) ENGINE = ReplacingMergeTree ORDER BY (project_id, fact_id)` });
