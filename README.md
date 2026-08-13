@@ -11,6 +11,7 @@ CanonCue is an evidence-first continuity workspace for authors, writers’ rooms
 - **App:** [app-production-517f.up.railway.app](https://app-production-517f.up.railway.app/)
 - **Repository:** [github.com/rishvaiyer/canon-guardian](https://github.com/rishvaiyer/canon-guardian)
 - **Synthetic walkthrough:** [`demo/episode-01-canon.txt`](demo/episode-01-canon.txt) → [`demo/episode-02-revision.txt`](demo/episode-02-revision.txt)
+- **Current live release:** `bc2272d` · Railway deployment `6f35b464-7650-47a8-8da1-7dea220ea7a5` (`SUCCESS`)
 
 The demo files are original synthetic fiction created for this repository. They are safe to use in a public walkthrough.
 
@@ -45,6 +46,31 @@ The synthetic revision intentionally breaks four established states: Jonah’s d
 - Repair Simulator compares the current claim with a proposed smallest edit. It is preview-only; CanonCue never changes a draft automatically.
 - PDF imports can produce a locally annotated copy with source highlights and a review appendix. The original PDF is never modified.
 
+### Explainable continuity scoring
+
+CanonCue separates **finding priority** from **repair preference**. Gemini can propose the interpretation, but the server validates the cited evidence and computes the ranking deterministically. Unsupported findings without a valid evidence index are removed before they reach the UI.
+
+Each supported finding receives a `finding_score` from 0–100:
+
+| Signal | Weight | What it measures |
+| --- | ---: | --- |
+| Evidence strength | 30% | Exact source, scene, line, and excerpt quality, plus corroboration |
+| Contradiction strength | 25% | Direct reversal versus weaker drift or ambiguity |
+| Downstream blast radius | 25% | Number of later beats and scope: scene, episode, season, or series |
+| Timeline certainty | 10% | Confidence that the ordering or knowledge boundary is established |
+| Gemini confidence | 10% | The model’s structured confidence after evidence gating |
+
+The API returns the component `score_breakdown`, a plain-language `score_rationale`, `priority_rank`, and aggregate `score_average`/`highest_score` metrics. Findings are displayed highest-risk first, so a well-supported series-level contradiction outranks an uncertain scene-level note.
+
+Repair options use a separate 0–100 ranking:
+
+- **40% canon preservation** — protect approved story truth.
+- **30% blast-radius reduction** — resolve the most later risk.
+- **20% edit effort** — prefer the smallest practical rewrite.
+- **10% confidence** — prefer options with stronger support.
+
+The result is an explainable editorial aid, not a claim that the score is objective truth or a learned model. The current weights are transparent heuristics. The Repair Simulator can record `accepted_repair`, `marked_intentional`, or `dismissed` decisions locally—without screenplay text—and export them as a calibration CSV for a future learned ranker.
+
 ### Continuity Map
 
 - The complete scene index is the primary browsing surface.
@@ -63,6 +89,7 @@ The synthetic revision intentionally breaks four established states: Jonah’s d
 - CSV Continuity Map
 - Untouched imported source files during the active browser session
 - Annotated source PDF when a PDF revision has findings
+- Review-feedback CSV containing only local editorial decisions and score metadata
 
 ## Optional Gemini + ClickHouse layer
 
@@ -84,7 +111,7 @@ Cloud review responses use `analysis_version: continuity-crew-v2` and support ei
 
 The response also includes evidence-backed impact scope, confidence, repair options, scored `repair_plan` entries, and aggregate metrics. CanonCue's transparent heuristic ranks each finding with evidence strength (30%), contradiction strength (25%), downstream blast radius (25%), timeline certainty (10%), and Gemini confidence (10%). Repair options are scored separately for canon preservation (40%), blast-radius reduction (30%), edit effort (20%), and confidence (10%). These are explainable decision aids, not a trained replacement for editorial judgment.
 
-The repair simulator captures optional writer decisions—accept repair, mark intentional, or dismiss—locally without storing screenplay text. The export center can download those decisions as CSV so a future calibration job can learn better weights from real editorial outcomes.
+The repair simulator captures optional writer decisions—accept repair, mark intentional, or dismiss—locally without storing screenplay text. The export center can download those decisions as CSV so a future calibration job can learn better weights from real editorial outcomes. No training job or automatic weight update is currently enabled.
 
 ## Run locally
 
