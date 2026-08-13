@@ -155,7 +155,7 @@
             </div>
             <div class="graph-legend">Select a scene. See the nearby continuity it can affect.</div>
           </div>
-          <div class="atlas-explainer"><strong>What this does:</strong><span>The scene index is the source of truth. Select a row to reveal its local continuity neighborhood: what comes next, which characters carry forward, and where approved evidence is attached. The map is an impact view, not a replacement for your script.</span></div>
+          <div class="atlas-explainer"><strong>How to read it:</strong><span>Start with the scene index. Select a row to reveal its local neighborhood. Amber <b>NEXT</b> lines show chronology; sage <b>THREAD</b> lines show a shared character. The selected scene’s explanation sits below the map. This is an impact view, not a replacement for your script.</span></div>
           <div class="character-browser" aria-label="Character navigator">
             <div><p class="eyebrow">CHARACTER LENS</p><p class="character-browser-copy">Choose a character to isolate their scenes, thread, and approved canon.</p></div>
             <div class="character-filters" id="character-filters" aria-label="Filter story map by character"></div>
@@ -173,8 +173,10 @@
             </aside>
             <div class="story-graph-panel" aria-live="polite">
               <div class="graph-panel-label"><span class="eyebrow">CONTINUITY MAP</span><span><i class="legend-line order"></i> NEXT SCENE <i class="legend-line character"></i> SAME THREAD</span></div>
-              <svg class="story-graph-lines" id="story-graph-lines" viewBox="0 0 1000 560" preserveAspectRatio="none" aria-hidden="true"></svg>
-              <div class="story-graph-nodes" id="story-graph-nodes"></div>
+              <div class="story-graph-viewport">
+                <svg class="story-graph-lines" id="story-graph-lines" viewBox="0 0 1000 560" preserveAspectRatio="none" aria-hidden="true"></svg>
+                <div class="story-graph-nodes" id="story-graph-nodes"></div>
+              </div>
               <div class="story-graph-detail" id="story-graph-detail"></div>
             </div>
           </div>
