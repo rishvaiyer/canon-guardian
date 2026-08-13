@@ -87,8 +87,11 @@ const storyGraphNodes = document.querySelector('#story-graph-nodes');
 const storyGraphLines = document.querySelector('#story-graph-lines');
 const storyGraphDetail = document.querySelector('#story-graph-detail');
 const storyGraphNote = document.querySelector('#story-graph-note');
+const characterFilters = document.querySelector('#character-filters');
+const characterInspector = document.querySelector('#character-inspector');
 let activeKey = 'code';
 let activeGraphNode = 0;
+let activeCharacter = 'ALL';
 let stagedFiles = [];
 let storyMemory = null;
 let currentImportRole = 'canon';
@@ -429,9 +432,33 @@ function makeGraphLayout(nodes, edges) {
   return positions;
 }
 
+function renderCharacterLens(allNodes) {
+  const appearances = new Map();
+  allNodes.forEach((node) => node.characters.forEach((character) => appearances.set(character, (appearances.get(character) || 0) + 1)));
+  const characters = [...appearances.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  if (!characters.some(([character]) => character === activeCharacter)) activeCharacter = 'ALL';
+  characterFilters.innerHTML = [`<button class="character-filter ${activeCharacter === 'ALL' ? 'active' : ''}" data-character-filter="ALL">All <span>${allNodes.length}</span></button>`, ...characters.map(([character, count]) => `<button class="character-filter ${activeCharacter === character ? 'active' : ''}" data-character-filter="${escapeHtml(character)}">${escapeHtml(character)} <span>${count}</span></button>`)].join('');
+  if (activeCharacter === 'ALL') {
+    characterInspector.innerHTML = `<strong>All characters</strong><span>${characters.length} named threads · ${allNodes.length} mapped scenes. Choose a name to narrow the graph.</span>`;
+    return;
+  }
+  const characterScenes = allNodes.filter((node) => node.characters.includes(activeCharacter));
+  const characterFacts = visibleLedgerFacts().filter((fact) => new RegExp(`\\b${activeCharacter.split(' ').map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s+')}\\b`, 'i').test(`${fact.label} ${fact.detail} ${fact.line.text}`));
+  characterInspector.innerHTML = `<strong>${escapeHtml(activeCharacter)}</strong><span>${characterScenes.length} mapped ${characterScenes.length === 1 ? 'scene' : 'scenes'} · ${characterFacts.length} approved or candidate ${characterFacts.length === 1 ? 'fact' : 'facts'}</span><small>${escapeHtml(characterScenes.slice(0, 3).map((scene) => `${scene.label} · ${scene.title}`).join('  /  ') || 'No scene details extracted yet.')}</small>`;
+}
+
 function renderStoryGraph(memory) {
-  const nodes = deriveStoryGraph(memory);
+  const allNodes = deriveStoryGraph(memory);
+  renderCharacterLens(allNodes);
+  const nodes = activeCharacter === 'ALL' ? allNodes : allNodes.filter((node) => node.characters.includes(activeCharacter));
   const savedLedgerGraph = !memory && projectLedger.facts.length > 0;
+  if (!nodes.length) {
+    storyGraphLines.innerHTML = '';
+    storyGraphNodes.innerHTML = '';
+    storyGraphDetail.innerHTML = `<p class="eyebrow">CHARACTER LENS</p><h3>No mapped scenes yet.</h3><p>Try All characters or add pages where this character appears by name.</p>`;
+    storyGraphNote.textContent = `No displayed scenes mention ${activeCharacter}.`;
+    return;
+  }
   const edges = buildGraphEdges(nodes);
   const positions = makeGraphLayout(nodes, edges);
   activeGraphNode = Math.min(activeGraphNode, Math.max(0, nodes.length - 1));
@@ -452,7 +479,7 @@ function renderStoryGraph(memory) {
   const sceneFacts = (storyMemory?.facts || []).filter((fact) => fact.line.sceneLabel === selected.label || fact.line.sceneLabel.startsWith(`${selected.label}:`));
   storyGraphDetail.innerHTML = `<p class="eyebrow">${escapeHtml(selected.label)} / ${memory ? 'IMPORTED SOURCE' : savedLedgerGraph ? 'SAVED CANON' : 'SAMPLE PROJECT'}</p><h3>${escapeHtml(selected.title)}</h3><p>${escapeHtml(selected.excerpt)}</p><span>${selected.characters.length ? `${escapeHtml(selected.characters.join(' · '))} thread` : 'No named character thread extracted'}</span>${sceneFacts.length ? `<button class="text-button graph-lock" data-lock-scene="${escapeHtml(selected.label)}">Lock ${sceneFacts.length} fact${sceneFacts.length === 1 ? '' : 's'} from this scene</button>` : ''}`;
   storyGraphNote.textContent = memory
-    ? `${nodes.length}${memory.sceneCount > nodes.length ? ` of ${memory.sceneCount}` : ''} ${nodes.length === 1 ? 'scene or beat' : 'scenes or beats'} shown in this readable map. Click a node to inspect its local thread.`
+    ? `${activeCharacter === 'ALL' ? '' : `${activeCharacter} · `}${nodes.length}${memory.sceneCount > allNodes.length ? ` of ${memory.sceneCount}` : ''} ${nodes.length === 1 ? 'scene or beat' : 'scenes or beats'} shown in this readable map. Click a node to inspect its local thread.`
     : savedLedgerGraph ? `${nodes.length} saved canon ${nodes.length === 1 ? 'scene' : 'scenes'} restored from this browser’s evidence ledger.` : 'The sample graph links the fixed events that drive The Last Loop. Import a script to map every detected scene.';
 }
 
@@ -888,6 +915,14 @@ storyGraphNodes.addEventListener('click', (event) => {
   const node = event.target.closest('[data-graph-node]');
   if (!node) return;
   activeGraphNode = Number(node.dataset.graphNode);
+  renderStoryGraph(storyMemory);
+});
+
+characterFilters.addEventListener('click', (event) => {
+  const filter = event.target.closest('[data-character-filter]');
+  if (!filter) return;
+  activeCharacter = filter.dataset.characterFilter;
+  activeGraphNode = 0;
   renderStoryGraph(storyMemory);
 });
 
