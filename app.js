@@ -277,38 +277,80 @@ function deriveStoryGraph(memory) {
   });
 }
 
-function graphPosition(index, total) {
-  if (total === 1) return [50, 52];
-  if (total > 10) {
-    const columns = 6;
-    const rows = Math.ceil(total / columns);
-    return [13 + ((index % columns) * 14.8), 17 + (Math.floor(index / columns) * (66 / Math.max(1, rows - 1)))];
+function graphSeed(value) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) hash = Math.imul(hash ^ value.charCodeAt(index), 16777619);
+  return (hash >>> 0) / 4294967295;
+}
+
+function buildGraphEdges(nodes) {
+  const order = nodes.slice(1).map((_, index) => [index, index + 1]);
+  const character = [];
+  const latestAppearance = new Map();
+  nodes.forEach((node, index) => node.characters.forEach((name) => {
+    if (latestAppearance.has(name)) character.push([latestAppearance.get(name), index]);
+    latestAppearance.set(name, index);
+  }));
+  return { order, character };
+}
+
+function makeGraphLayout(nodes, edges) {
+  if (nodes.length === 1) return [[50, 48]];
+  const positions = nodes.map((node, index) => [
+    16 + (graphSeed(`${node.label}-${index}`) * 66),
+    14 + (graphSeed(`${node.title}-${index}`) * 68)
+  ]);
+  const links = [...edges.order.map((edge) => [...edge, 26]), ...edges.character.map((edge) => [...edge, 31])];
+  for (let pass = 0; pass < 220; pass += 1) {
+    const forces = positions.map(() => [0, 0]);
+    positions.forEach((position, index) => positions.slice(index + 1).forEach((other, offset) => {
+      const target = index + offset + 1;
+      const dx = position[0] - other[0];
+      const dy = position[1] - other[1];
+      const distance = Math.max(3, Math.hypot(dx, dy));
+      const strength = 180 / (distance * distance);
+      const x = (dx / distance) * strength;
+      const y = (dy / distance) * strength;
+      forces[index][0] += x; forces[index][1] += y;
+      forces[target][0] -= x; forces[target][1] -= y;
+    }));
+    links.forEach(([from, to, preferredDistance]) => {
+      const dx = positions[to][0] - positions[from][0];
+      const dy = positions[to][1] - positions[from][1];
+      const distance = Math.max(3, Math.hypot(dx, dy));
+      const strength = (distance - preferredDistance) * 0.024;
+      const x = (dx / distance) * strength;
+      const y = (dy / distance) * strength;
+      forces[from][0] += x; forces[from][1] += y;
+      forces[to][0] -= x; forces[to][1] -= y;
+    });
+    positions.forEach((position, index) => {
+      forces[index][0] += (50 - position[0]) * 0.008;
+      forces[index][1] += (48 - position[1]) * 0.008;
+      position[0] = Math.min(87, Math.max(13, position[0] + (forces[index][0] * 0.72)));
+      position[1] = Math.min(85, Math.max(15, position[1] + (forces[index][1] * 0.72)));
+    });
   }
-  const angle = (-Math.PI / 2) + ((Math.PI * 2 * index) / total);
-  const radiusX = 34;
-  const radiusY = 35;
-  return [50 + (Math.cos(angle) * radiusX), 51 + (Math.sin(angle) * radiusY)];
+  return positions;
 }
 
 function renderStoryGraph(memory) {
   const nodes = deriveStoryGraph(memory);
-  const positions = nodes.map((_, index) => graphPosition(index, nodes.length));
+  const edges = buildGraphEdges(nodes);
+  const positions = makeGraphLayout(nodes, edges);
   activeGraphNode = Math.min(activeGraphNode, Math.max(0, nodes.length - 1));
   const toPoint = ([x, y]) => [x * 10, y * 5.6];
-  const edgeLines = nodes.slice(1).map((_, index) => {
-    const [x1, y1] = toPoint(positions[index]);
-    const [x2, y2] = toPoint(positions[index + 1]);
+  const edgeLines = edges.order.map(([from, to]) => {
+    const [x1, y1] = toPoint(positions[from]);
+    const [x2, y2] = toPoint(positions[to]);
     return `<line class="graph-edge order" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" />`;
   });
-  const threadLines = [];
-  nodes.forEach((node, index) => nodes.slice(index + 2).forEach((later, offset) => {
-    if (!node.characters.some((character) => later.characters.includes(character))) return;
-    const target = index + offset + 2;
-    const [x1, y1] = toPoint(positions[index]);
-    const [x2, y2] = toPoint(positions[target]);
-    threadLines.push(`<line class="graph-edge character" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" />`);
-  }));
-  storyGraphLines.innerHTML = `${edgeLines.join('')}${threadLines.slice(0, 36).join('')}`;
+  const threadLines = edges.character.map(([from, to]) => {
+    const [x1, y1] = toPoint(positions[from]);
+    const [x2, y2] = toPoint(positions[to]);
+    return `<line class="graph-edge character" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" />`;
+  });
+  storyGraphLines.innerHTML = `${edgeLines.join('')}${threadLines.join('')}`;
   storyGraphNodes.innerHTML = nodes.map((node, index) => `<button class="story-node ${index === activeGraphNode ? 'active' : ''}" data-graph-node="${index}" style="left:${positions[index][0]}%;top:${positions[index][1]}%"><span>${escapeHtml(node.label)}</span><b>${escapeHtml(node.title)}</b>${node.characters.length ? `<small>${escapeHtml(node.characters.join(' · '))}</small>` : ''}</button>`).join('');
   const selected = nodes[activeGraphNode];
   storyGraphDetail.innerHTML = `<p class="eyebrow">${escapeHtml(selected.label)} / ${memory ? 'IMPORTED SOURCE' : 'SAMPLE PROJECT'}</p><h3>${escapeHtml(selected.title)}</h3><p>${escapeHtml(selected.excerpt)}</p><span>${selected.characters.length ? `${escapeHtml(selected.characters.join(' · '))} thread` : 'No named character thread extracted'}</span>`;
