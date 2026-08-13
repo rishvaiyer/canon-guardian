@@ -24,7 +24,7 @@ The included project, **The Last Loop**, is original demo data. The default work
 
 ## Gemini Enterprise + ClickHouse agent
 
-The local workflow is the default. Cloud review is an explicit, per-review opt-in: it sends only the current incoming-draft text and user-locked canon evidence to the configured cloud services. The server stores evidence rows in ClickHouse; it does not persist the full draft there.
+The local workflow is the default. Cloud review is an explicit, per-review opt-in: it sends only the current incoming-draft text and user-locked canon evidence to the configured cloud services. The server stores evidence rows in ClickHouse; it does not persist the full draft there. `Ask the canon` is a grounded Q&A path that sends only the writer's question and locked evidence, validates Gemini's citation indexes against retrieved ClickHouse rows, and returns `not_found` when the canon cannot support an answer.
 
 1. Copy `.env.example` to your secret store or local environment. Authenticate local development with Application Default Credentials (`gcloud auth application-default login`); hosted deployments use a sealed service-account JSON variable. Set your Google Cloud project/location, enable billing and Gemini Enterprise Agent Platform, and configure a private ClickHouse service.
 2. Build the app and run the combined app/API server:
@@ -36,7 +36,7 @@ npm run serve
 
 For local UI development, run `npm start` and `npm run serve` in separate terminals; Vite proxies `/api` to the agent server.
 
-The `AI evidence review` button intentionally fails closed until both cloud services are configured and the writer checks the consent box.
+The `AI evidence review`, `Generate canon`, and `Ask the canon` buttons intentionally fail closed until the cloud service is configured and the writer checks the relevant consent box. Every cloud response includes a visible agent trace and keeps human approval in the loop.
 
 The cloud path is deliberately separate from the local path: the browser sends the current incoming draft and approved evidence only after explicit consent; the server stores approved evidence rows in ClickHouse and asks Gemini for structured, evidence-cited findings. The local checker remains available offline and is the default review path.
 
