@@ -58,6 +58,7 @@ let issues = {
 
 const issuesRoot = document.querySelector('#issues');
 const copyRoot = document.querySelector('#impact-copy');
+const repairSimulator = document.querySelector('#repair-simulator');
 const nodesRoot = document.querySelector('#impact-nodes');
 const lines = document.querySelector('#impact-lines');
 const response = document.querySelector('#agent-response');
@@ -103,6 +104,7 @@ const atlasExpand = document.querySelector('#atlas-expand');
 const aiReadiness = document.querySelector('#ai-readiness');
 const aiNextStep = document.querySelector('#ai-next-step');
 const workflowRail = document.querySelector('#workflow-rail');
+const reviewInbox = document.querySelector('#review-inbox');
 const seriesTimelineList = document.querySelector('#series-timeline-list');
 const canonAiDialog = document.querySelector('#canon-ai-dialog');
 const canonAiConsent = document.querySelector('#canon-ai-consent');
@@ -257,6 +259,30 @@ function renderWorkflow() {
   workflowRail.innerHTML = steps.map((step) => `<div class="workflow-step ${step.done ? 'done' : ''}"><span>${step.number}</span><div><b>${step.title}</b><small>${step.detail}</small></div><button class="text-button" data-workflow-action="${step.action}" type="button">${step.done && step.action !== 'canon' ? 'View' : step.cta} ↗</button></div>`).join('');
 }
 
+function renderReopenSourceNotice() {
+  if (!projectLedger.sources.length || storyMemory) return;
+  const panel = document.querySelector('.scene-panel');
+  if (!panel) return;
+  const canon = projectLedger.sources.find((source) => source.role === 'canon') || projectLedger.sources[0];
+  panel.innerHTML = `<div class="section-heading"><div><p class="eyebrow">LOCAL STORY MEMORY</p><h2>Your source is <em>saved.</em></h2></div><span class="page-chip">RE-OPEN TO READ</span></div><article class="script-paper story-overview"><p class="slug">${escapeHtml(canon.name)}</p><p><strong>CanonCue remembers the ledger, not your screenplay text.</strong> Your source names, roles, metadata, and locks are still here, but the pages stay private in your browser and must be re-opened to inspect or re-run analysis.</p><p class="overview-next"><strong>Next:</strong> re-open the Canon source locally, then add an Incoming revision to compare it against approved facts.</p></article><div class="scene-footer"><span><i></i> No source text was uploaded</span><button class="text-button" type="button" data-reopen-source>Re-open source ↗</button></div>`;
+}
+
+function renderReviewInbox() {
+  if (!reviewInbox) return;
+  const entries = Object.values(issues || {});
+  const imported = Boolean(storyMemory);
+  const locked = projectLedger.facts.filter((fact) => fact.locked).length;
+  const revisions = projectLedger.sources.filter((source) => source.role === 'revision').length;
+  const open = entries.length;
+  const label = imported && currentImportRole === 'revision'
+    ? (open ? `${open} open ${open === 1 ? 'finding' : 'findings'}` : 'No open findings')
+    : imported ? 'Source indexed · ready for review' : 'Sample project · ready to explore';
+  const detail = imported && currentImportRole === 'revision'
+    ? `${locked} approved ${locked === 1 ? 'fact' : 'facts'} checked${revisions ? ` · ${revisions} revision${revisions === 1 ? '' : 's'} saved` : ''}`
+    : imported ? 'Re-open the review room to inspect the imported source and approve evidence.' : 'Run the sample review, or add a canon source to start your own story world.';
+  reviewInbox.innerHTML = `<div class="review-inbox-copy"><span class="eyebrow">REVIEW INBOX</span><strong>${escapeHtml(label)}</strong><small>${escapeHtml(detail)}</small></div><div class="review-inbox-actions"><span class="inbox-chip ${open ? 'has-findings' : ''}">${open ? `${open} ${open === 1 ? 'break' : 'breaks'} to review` : 'No breaks surfaced'}</span><button class="text-button" type="button" data-review-inbox-action="${open ? 'impact' : imported ? 'canon' : 'upload'}">${open ? 'Review next ↗' : imported ? 'View canon ↗' : 'Start with canon ↗'}</button></div>`;
+}
+
 function refreshSavedProject() {
   const locked = projectLedger.facts.filter((fact) => fact.locked).length;
   if (projectLedger.sources.length) {
@@ -271,6 +297,8 @@ function refreshSavedProject() {
   renderSeriesTimeline();
   renderLedgerFacts();
   renderWorkflow();
+  renderReviewInbox();
+  renderReopenSourceNotice();
 }
 
 function lineHasCharacter(line, character) {
@@ -650,11 +678,13 @@ function renderIssueList() {
 
 function renderImpact(key) {
   activeKey = key;
+  renderReviewInbox();
   const issue = issues[key];
   currentAnnotations = Object.values(issues).flatMap((finding) => finding.annotationLines || []);
   downloadAnnotated.hidden = !(sourcePdfFile && currentAnnotations.length);
   renderIssueList();
   copyRoot.innerHTML = `<p class="eyebrow">${escapeHtml(issue.evidence)}</p><h3>${escapeHtml(issue.heading)}</h3><p>${escapeHtml(issue.copy)}</p>`;
+  renderRepairSimulator(key);
   const positions = [[44, 190], [42, 300], [59, 83]];
   nodesRoot.innerHTML = issue.nodes.map((node, index) => `<div class="node ${index === 0 ? 'primary' : ''}" style="left:${positions[index][0]}%;top:${positions[index][1]}px"><span class="node-kicker">${escapeHtml(node[0])}</span><b>${escapeHtml(node[1])}</b><small>${escapeHtml(node[2])}</small></div>`).join('');
   lines.innerHTML = '<path d="M 510 248 C 565 248, 585 330, 535 340"/><path d="M 510 248 C 615 220, 640 130, 680 130"/>';
@@ -662,15 +692,44 @@ function renderImpact(key) {
   response.innerHTML = `<span class="response-kicker">${escapeHtml(issue.number)} / ${escapeHtml(issue.severity)}</span><p><b>${escapeHtml(issue.title)}.</b> I found a source-backed conflict and mapped the next beat to review. The smallest repair is usually to revise this scene before changing the ending.</p>`;
 }
 
+function renderRepairSimulator(key, selectedIndex = 0, simulated = false) {
+  if (!repairSimulator) return;
+  const issue = issues[key];
+  if (!issue) return;
+  const options = Array.isArray(issue.repairOptions) && issue.repairOptions.length
+    ? issue.repairOptions
+    : [issue.smallestRepair || 'Revise the incoming beat to preserve the locked canon.', 'Approve an intentional canon change and re-review the downstream scenes.'];
+  const selected = options[Math.min(selectedIndex, options.length - 1)];
+  const sourceClaim = issue.nodes?.find((node) => String(node[2] || '').toLowerCase().includes('revision'))?.[1] || 'Incoming revision claim';
+  repairSimulator.innerHTML = `
+    <div class="repair-sim-head"><div><span class="eyebrow">REPAIR SIMULATOR</span><h3>${simulated ? 'Preview ready' : 'Choose the smallest safe edit.'}</h3></div><span class="repair-score">${simulated ? 'PREVIEW ONLY' : `${options.length} PATH${options.length === 1 ? '' : 'S'}`}</span></div>
+    <p class="repair-sim-intro">CanonCue ranks repairs by how much canon they preserve. Nothing changes in your source until you approve it.</p>
+    <div class="repair-options">${options.slice(0, 3).map((option, index) => `<button type="button" class="repair-option ${index === selectedIndex ? 'active' : ''}" data-repair-option="${index}"><span>${String(index + 1).padStart(2, '0')}</span><b>${escapeHtml(option)}</b><small>${index === 0 ? 'Smallest edit · preserves approved canon' : 'Alternative · requires editorial decision'}</small></button>`).join('')}</div>
+    <div class="repair-preview"><span class="repair-label">${simulated ? 'PROPOSED CHANGE' : 'CURRENT CLAIM'}</span><p>${escapeHtml(simulated ? `${sourceClaim} → ${selected}` : sourceClaim)}</p><button type="button" class="text-button" data-simulate-repair="${escapeHtml(key)}" data-repair-selected="${selectedIndex}">${simulated ? 'Reset preview' : 'Simulate this repair ↗'}</button></div>`;
+  repairSimulator.querySelectorAll('[data-repair-option]').forEach((button) => button.addEventListener('click', () => renderRepairSimulator(key, Number(button.dataset.repairOption), simulated)));
+  const simulateButton = repairSimulator.querySelector('[data-simulate-repair]');
+  simulateButton?.addEventListener('click', () => renderRepairSimulator(key, Number(simulateButton.dataset.repairSelected), !simulated));
+}
+
 function selectIssue(event) {
   const source = event.target.closest('[data-issue]');
   if (source && issues[source.dataset.issue]) renderImpact(source.dataset.issue);
 }
 
+document.addEventListener('click', (event) => {
+  if (event.target.closest('[data-reopen-source]')) document.querySelector('#open-upload')?.click();
+  const action = event.target.closest('[data-review-inbox-action]')?.dataset.reviewInboxAction;
+  if (!action) return;
+  if (action === 'impact') document.querySelector('#downstream')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  if (action === 'canon') document.querySelector('#canon')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  if (action === 'upload') document.querySelector('#open-upload')?.click();
+});
+
 document.addEventListener('click', selectIssue);
 document.querySelector('#show-ledger').addEventListener('click', () => document.querySelector('#canon').scrollIntoView({ behavior: 'smooth' }));
 
 function renderNoImportedBreaks() {
+  renderReviewInbox();
   currentAnnotations = [];
   downloadAnnotated.hidden = true;
   issuesRoot.innerHTML = '<p class="empty-queue">No deterministic contradictions found in these sources.</p>';
@@ -709,6 +768,7 @@ function renderImportedStoryOverview(memory, role, totalPages) {
 }
 
 function renderCanonBaselineReady(memory) {
+  renderReviewInbox();
   currentAnnotations = [];
   downloadAnnotated.hidden = true;
   const sceneCount = memory.sceneCount || 0;
@@ -720,6 +780,7 @@ function renderCanonBaselineReady(memory) {
 }
 
 function renderRevisionNeedsLocks() {
+  renderReviewInbox();
   currentAnnotations = [];
   downloadAnnotated.hidden = true;
   issuesRoot.innerHTML = '<p class="empty-queue">No approved canon locks available for this comparison.</p>';
@@ -1077,7 +1138,8 @@ async function runCanonAi() {
 }
 
 function renderCloudFindings(review) {
-  const findings = Array.isArray(review?.findings) ? review.findings.slice(0, 4) : [];
+  const allFindings = Array.isArray(review?.findings) ? review.findings : [];
+  const findings = allFindings.slice(0, 12);
   if (!findings.length) return;
   issues = Object.fromEntries(findings.map((finding, index) => [`cloud-${index}`, {
     number: `AI ${String(index + 1).padStart(2, '0')}`,
@@ -1086,16 +1148,18 @@ function renderCloudFindings(review) {
     summary: `${finding.why || 'The agent found a source-backed concern.'}${finding.confidence ? ` · ${String(finding.confidence).toUpperCase()} confidence` : ''}`,
     heading: finding.title || 'Evidence-backed continuity concern.',
     copy: `${finding.why || 'Review this claim against the cited canon evidence.'} ${Array.isArray(finding.downstream_beats) && finding.downstream_beats.length ? `Downstream at risk: ${finding.downstream_beats.join(' · ')}.` : ''} Repair options: ${Array.isArray(finding.repair_options) && finding.repair_options.length ? finding.repair_options.join(' / ') : finding.smallest_repair || 'Review this beat with the story editor.'}`,
+    repairOptions: Array.isArray(finding.repair_plan) && finding.repair_plan.length ? finding.repair_plan.map((option) => `${option.label} · score ${option.score}/100`) : finding.repair_options,
+    smallestRepair: finding.smallest_repair,
     evidence: `GEMINI EVIDENCE · ${finding.evidence || 'Retrieved canon evidence'}`,
     nodes: [
       ['CANON EVIDENCE', finding.evidence || 'Approved source', 'Retrieved from ClickHouse'],
       ['BREAK DETECTOR', finding.title || 'Continuity concern', `${String(finding.confidence || 'review').toUpperCase()} confidence · Gemini`],
-      ['REPAIR PLAN', finding.smallest_repair || (Array.isArray(finding.repair_options) ? finding.repair_options[0] : null) || 'Editor review required', `${Array.isArray(finding.downstream_beats) ? finding.downstream_beats.length : 0} downstream beat${Array.isArray(finding.downstream_beats) && finding.downstream_beats.length === 1 ? '' : 's'} at risk`]
+      ['REPAIR PLAN', finding.smallest_repair || (Array.isArray(finding.repair_options) ? finding.repair_options[0] : null) || 'Editor review required', `${finding.finding_type || 'continuity'} · ${Array.isArray(finding.downstream_beats) ? finding.downstream_beats.length : 0} downstream beat${Array.isArray(finding.downstream_beats) && finding.downstream_beats.length === 1 ? '' : 's'} at risk`]
     ]
   }]));
   activeKey = 'cloud-0';
   renderImpact(activeKey);
-  response.innerHTML = `<span class="response-kicker">CONTINUITY CREW / GEMINI + CLICKHOUSE</span><p><b>${escapeHtml(review.summary || `${findings.length} evidence-backed ${findings.length === 1 ? 'concern' : 'concerns'} found.`)}</b> The crew separated canon evidence, break detection, downstream risk, and repair options for your approval.</p>`;
+  response.innerHTML = `<span class="response-kicker">CONTINUITY CREW / GEMINI + CLICKHOUSE</span><p><b>${escapeHtml(review.summary || `${allFindings.length} evidence-backed ${allFindings.length === 1 ? 'concern' : 'concerns'} found.`)}</b> Showing ${findings.length} of ${allFindings.length} findings. The crew separated canon evidence, break detection, downstream risk, and repair options for your approval.</p>`;
 }
 
 async function runCloudReview() {
