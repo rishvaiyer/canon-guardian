@@ -1,3 +1,9 @@
+import mammoth from 'mammoth';
+import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
+import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
+
+GlobalWorkerOptions.workerSrc = pdfWorker;
+
 const issues = {
   code: {
     number: 'BREAK 01', title: 'Knowledge arrives five minutes early', severity: 'CRITICAL',
@@ -56,7 +62,17 @@ const lines = document.querySelector('#impact-lines');
 const response = document.querySelector('#agent-response');
 const status = document.querySelector('#analysis-status');
 const statusMeta = document.querySelector('#status-meta');
+const importDialog = document.querySelector('#import-dialog');
+const uploadInput = document.querySelector('#script-upload');
+const dropZone = document.querySelector('#drop-zone');
+const importQueue = document.querySelector('#import-queue');
+const useImport = document.querySelector('#use-import');
+const projectTitle = document.querySelector('#project-title');
+const projectMeta = document.querySelector('#project-meta');
+const canonCount = document.querySelector('#canon-count');
+const fileCount = document.querySelector('#file-count');
 let activeKey = 'code';
+let stagedFiles = [];
 
 function renderIssueList() {
   issuesRoot.innerHTML = Object.entries(issues).map(([key, issue]) => `
@@ -90,7 +106,7 @@ document.querySelector('#run-analysis').addEventListener('click', () => {
   const button = document.querySelector('#run-analysis');
   button.disabled = true;
   button.textContent = 'Reading revision…';
-  status.textContent = 'Canon agent is extracting people, objects, knowledge, time, and irreversible events.';
+  status.textContent = 'Story agent is extracting people, objects, knowledge, time, and irreversible events.';
   statusMeta.textContent = 'Checking 4 claims against 26 facts';
   setTimeout(() => {
     button.innerHTML = '<span class="spark">✦</span> Analysis complete';
@@ -99,5 +115,129 @@ document.querySelector('#run-analysis').addEventListener('click', () => {
     renderImpact('code');
   }, 1200);
 });
+
+function formatSize(bytes) {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(bytes > 100 * 1024 * 1024 ? 0 : 1)} MB`;
+}
+
+function documentKind(file) {
+  const extension = file.name.split('.').pop().toLowerCase();
+  return extension === 'fountain' ? 'FOUNTAIN' : extension === 'fdx' ? 'FINAL DRAFT' : extension.toUpperCase();
+}
+
+function renderImportQueue() {
+  if (!stagedFiles.length) {
+    importQueue.innerHTML = '<p class="empty-queue">No pages in this import yet.</p>';
+    useImport.disabled = true;
+    return;
+  }
+  useImport.disabled = false;
+  importQueue.innerHTML = stagedFiles.map(({ file }, index) => `
+    <div class="queued-file"><span class="file-type">${documentKind(file)}</span><span class="file-detail"><span class="file-name">${file.name}</span><span class="file-status">${formatSize(file.size)} · ready for local extraction</span></span><button class="remove-file" data-remove-file="${index}" aria-label="Remove ${file.name}">×</button></div>`).join('');
+}
+
+function addFiles(files) {
+  const allowable = Array.from(files).filter((file) => /\.(txt|fountain|fdx|pdf|docx)$/i.test(file.name));
+  const newFiles = allowable.filter((file) => !stagedFiles.some(({ file: staged }) => staged.name === file.name && staged.size === file.size));
+  stagedFiles = [...stagedFiles, ...newFiles.map((file) => ({ file }))];
+  renderImportQueue();
+}
+
+function countScenes(text) {
+  return (text.match(/(?:^|\n)\s*(?:INT\.|EXT\.|INT\/EXT\.|I\/E\.)/gim) || []).length;
+}
+
+async function extractPdf(file, onProgress) {
+  const loadingTask = getDocument({ data: new Uint8Array(await file.arrayBuffer()) });
+  const pdf = await loadingTask.promise;
+  const pages = [];
+  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+    onProgress(`Reading ${file.name}: page ${pageNumber} of ${pdf.numPages}`);
+    const page = await pdf.getPage(pageNumber);
+    const content = await page.getTextContent();
+    pages.push(content.items.map((item) => item.str).join(' '));
+  }
+  return { text: pages.join('\n'), pages: pdf.numPages };
+}
+
+async function extractFdx(file) {
+  const xml = new DOMParser().parseFromString(await file.text(), 'application/xml');
+  if (xml.querySelector('parsererror')) throw new Error('The Final Draft file could not be read.');
+  const paragraphs = [...xml.querySelectorAll('Paragraph')];
+  return {
+    text: paragraphs.map((paragraph) => paragraph.textContent.trim()).filter(Boolean).join('\n'),
+    scenes: paragraphs.filter((paragraph) => /scene heading/i.test(paragraph.getAttribute('Type') || '')).length
+  };
+}
+
+async function extractFile(file, onProgress) {
+  const extension = file.name.split('.').pop().toLowerCase();
+  if (extension === 'pdf') {
+    const pdf = await extractPdf(file, onProgress);
+    return { ...pdf, scenes: countScenes(pdf.text) };
+  }
+  if (extension === 'docx') {
+    onProgress(`Reading ${file.name}`);
+    const result = await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
+    return { text: result.value, scenes: countScenes(result.value), pages: 0 };
+  }
+  if (extension === 'fdx') {
+    const fdx = await extractFdx(file);
+    return { ...fdx, pages: 0 };
+  }
+  const text = await file.text();
+  return { text, scenes: countScenes(text), pages: 0 };
+}
+
+async function buildStoryMemory() {
+  useImport.disabled = true;
+  useImport.textContent = 'Reading documents…';
+  const extracted = [];
+  try {
+    for (const entry of stagedFiles) {
+      const result = await extractFile(entry.file, (message) => { status.textContent = message; });
+      extracted.push({ ...entry, ...result });
+    }
+    const totalScenes = extracted.reduce((total, file) => total + file.scenes, 0);
+    const totalPages = extracted.reduce((total, file) => total + file.pages, 0);
+    const primaryFile = extracted[0].file;
+    projectTitle.textContent = primaryFile.name.replace(/\.[^.]+$/, '');
+    projectMeta.textContent = `${extracted.length} source ${extracted.length === 1 ? 'file' : 'files'} · ${totalScenes || totalPages || 'story'} ${totalScenes === 1 ? 'scene' : totalScenes ? 'scenes' : totalPages === 1 ? 'page' : totalPages ? 'pages' : 'indexed'}`;
+    canonCount.textContent = `${Math.max(26, totalScenes * 3)} story facts`;
+    fileCount.textContent = `${extracted.length} source ${extracted.length === 1 ? 'file' : 'files'}`;
+    status.textContent = `${extracted.length} source ${extracted.length === 1 ? 'file is' : 'files are'} in this story’s memory. Lock facts, then run a revision check.`;
+    statusMeta.textContent = `${totalScenes || totalPages || 'all'} scenes ready · local-first`;
+    stagedFiles = extracted;
+    renderImportQueue();
+    importDialog.close();
+  } catch (error) {
+    status.textContent = `Could not read the selected file: ${error.message}`;
+    statusMeta.textContent = 'Nothing was uploaded or sent';
+  } finally {
+    useImport.textContent = 'Build story memory';
+    useImport.disabled = !stagedFiles.length;
+  }
+}
+
+document.querySelector('#open-upload').addEventListener('click', () => importDialog.showModal());
+document.querySelector('#close-upload').addEventListener('click', () => importDialog.close());
+uploadInput.addEventListener('change', (event) => addFiles(event.target.files));
+useImport.addEventListener('click', buildStoryMemory);
+importQueue.addEventListener('click', (event) => {
+  const remove = event.target.closest('[data-remove-file]');
+  if (!remove) return;
+  stagedFiles.splice(Number(remove.dataset.removeFile), 1);
+  renderImportQueue();
+});
+['dragenter', 'dragover'].forEach((eventName) => dropZone.addEventListener(eventName, (event) => {
+  event.preventDefault();
+  dropZone.classList.add('dragging');
+}));
+['dragleave', 'drop'].forEach((eventName) => dropZone.addEventListener(eventName, (event) => {
+  event.preventDefault();
+  dropZone.classList.remove('dragging');
+}));
+dropZone.addEventListener('drop', (event) => addFiles(event.dataTransfer.files));
 
 renderImpact(activeKey);

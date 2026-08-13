@@ -1,10 +1,19 @@
 {
-  "name": "canon-guardian",
+  "name": "story-is-straight",
   "version": "0.1.0",
   "private": true,
-  "description": "Evidence-backed story canon intelligence for screenplays.",
+  "type": "module",
+  "description": "Get your story straight: evidence-backed story intelligence for screenplays.",
   "scripts": {
     "check": "node --check app.js",
-    "start": "python3 -m http.server 4173"
+    "start": "vite --host 0.0.0.0",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "mammoth": "^1.12.1",
+    "pdfjs-dist": "^5.5.207"
+  },
+  "devDependencies": {
+    "vite": "^6.4.3"
   }
 }

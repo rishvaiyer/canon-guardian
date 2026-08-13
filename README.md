@@ -1,6 +1,6 @@
-# Canon Guardian
+# storyIsStraight
 
-Evidence-backed story-canon intelligence for a screenplay revision.
+**Get your story straight.** Evidence-backed story intelligence for a screenplay revision.
 
 ## What this MVP demonstrates
 
@@ -9,16 +9,13 @@ Evidence-backed story-canon intelligence for a screenplay revision.
 - Contradiction alerts that explain the smallest repair.
 - A yellow downstream impact map showing which later story beats stop making sense.
 
-The included project, **The Last Loop**, is original demo data. This static MVP does not call an LLM or upload screenplay data; its interactions demonstrate the intended product flow safely and deterministically.
+The included project, **The Last Loop**, is original demo data. The app reads supported screenplay source files locally in the browser and does not upload them. It does not call an LLM in this MVP.
 
 ## Run
 
 ```bash
+npm install
 npm start
 ```
 
-Open http://localhost:4173.
-
-## Next build step
-
-Add an opt-in server-side analysis route using structured LLM output for claims, evidence links, confidence, and repair suggestions. Keep a human editor in control of every canon lock and every proposed change.
+Open the local URL shown in the terminal.

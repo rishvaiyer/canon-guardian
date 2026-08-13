@@ -3,8 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#090a0c" />
-    <title>Canon Guardian — The Last Loop</title>
+    <meta name="theme-color" content="#233c31" />
+    <title>storyIsStraight — The Last Loop</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
@@ -15,7 +15,7 @@
       <aside class="sidebar">
         <a class="brand" href="#top" aria-label="Canon Guardian home">
           <span class="brand-mark">CG</span>
-          <span>canon<br />guardian</span>
+          <span class="brand-name">story<br />isStraight</span>
         </a>
 
         <nav aria-label="Project navigation">
@@ -26,9 +26,9 @@
 
         <div class="project-card">
           <p class="eyebrow">ACTIVE PROJECT</p>
-          <h2>The Last Loop</h2>
-          <p>Draft 4 · 10 pages</p>
-          <div class="project-stats"><span>26 canon facts</span><span>4 characters</span></div>
+          <h2 id="project-title">The Last Loop</h2>
+          <p id="project-meta">Draft 4 · 10 pages</p>
+          <div class="project-stats"><span id="canon-count">26 canon facts</span><span id="file-count">4 characters</span></div>
         </div>
 
         <p class="privacy-note"><span class="lock">⌁</span> Demo data only. No screenplay is sent anywhere in this MVP.</p>
@@ -37,15 +37,18 @@
       <section class="workspace" id="top">
         <header class="topbar">
           <div>
-            <p class="eyebrow">CANON INTELLIGENCE / REVISION REVIEW</p>
-            <h1>Your story remembers <em>everything.</em></h1>
+            <p class="eyebrow">STORY INTELLIGENCE / REVISION REVIEW</p>
+            <h1>Get your story <em>straight.</em></h1>
           </div>
-          <button class="primary-button" id="run-analysis"><span class="spark">✦</span> Run canon analysis</button>
+          <div class="top-actions">
+            <button class="secondary-button" id="open-upload">+ Add to story</button>
+            <button class="primary-button" id="run-analysis"><span class="spark">✦</span> Run story check</button>
+          </div>
         </header>
 
         <section class="status-strip" aria-live="polite">
           <span class="pulse"></span>
-          <span id="analysis-status">Canon agent is ready to compare Revision 4 against the locked story ledger.</span>
+          <span id="analysis-status">Story agent is ready to compare Revision 4 against the locked story ledger.</span>
           <span class="status-meta" id="status-meta">26 facts indexed · 0 checks running</span>
         </section>
 
@@ -78,7 +81,7 @@
           <section class="agent-panel" id="canon">
             <div class="section-heading compact">
               <div>
-                <p class="eyebrow">CANON COPILOT</p>
+                <p class="eyebrow">STORY COPILOT</p>
                 <h2>What changed?</h2>
               </div>
               <span class="agent-orb" aria-label="Agent online"></span>
@@ -119,6 +122,25 @@
         </section>
       </section>
     </main>
-    <script src="app.js"></script>
+
+    <dialog class="import-dialog" id="import-dialog" aria-labelledby="import-title">
+      <div class="dialog-topline"><span>STORY LIBRARY / LOCAL IMPORT</span><button class="close-dialog" id="close-upload" aria-label="Close import">×</button></div>
+      <div class="import-content">
+        <p class="eyebrow">BUILD A LIVING SERIES BIBLE</p>
+        <h2 id="import-title">Add the pages that make this world <em>true.</em></h2>
+        <p class="import-intro">Import a pilot, rewrite, episode, outline, or character document. storyIsStraight keeps each file in the project’s memory so future pages can be checked against it.</p>
+        <label class="drop-zone" id="drop-zone" for="script-upload">
+          <input id="script-upload" type="file" accept=".txt,.fountain,.fdx,.pdf,.doc,.docx" multiple />
+          <span class="upload-icon">↥</span>
+          <span class="upload-title">Drop scripts here or choose files</span>
+          <span class="upload-help">Local extraction: PDF, Word .docx, .txt, Fountain, and Final Draft .fdx. No front-end file-size cap.</span>
+        </label>
+        <div class="import-queue" id="import-queue" aria-live="polite">
+          <p class="empty-queue">No pages in this import yet.</p>
+        </div>
+        <div class="import-footer"><span><i></i> Files stay on this device.</span><button class="primary-button" id="use-import" disabled>Build story memory</button></div>
+      </div>
+    </dialog>
+    <script type="module" src="app.js"></script>
   </body>
 </html>
