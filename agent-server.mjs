@@ -154,6 +154,45 @@ async function extractCanonCandidatesWithCloud(body) {
   };
 }
 
+async function askCanonWithCloud(body) {
+  if (!body.consent) throw new Error('Ask the canon requires explicit consent.');
+  const question = String(body.question || '').trim();
+  const lockedFacts = Array.isArray(body.lockedFacts) ? body.lockedFacts.slice(0, 120) : [];
+  if (!question || !lockedFacts.length) throw new Error('Ask a question and lock at least one canon fact first.');
+  const projectId = safeProjectName(body.projectTitle);
+  const clickhouse = createClient({ url: process.env.CLICKHOUSE_HOST, username: process.env.CLICKHOUSE_USER || 'default', password: process.env.CLICKHOUSE_PASSWORD });
+  try {
+    await clickhouse.exec({ query: `CREATE DATABASE IF NOT EXISTS ${clickhouseDatabase}` });
+    await clickhouse.exec({ query: `CREATE TABLE IF NOT EXISTS ${clickhouseDatabase}.canon_evidence (project_id String, fact_id String, label String, fact_type String, source_name String, scene_label String, line_number UInt32, excerpt String, locked_at DateTime) ENGINE = ReplacingMergeTree ORDER BY (project_id, fact_id)` });
+    await clickhouse.insert({ table: `${clickhouseDatabase}.canon_evidence`, values: lockedFacts.map((fact) => ({ project_id: projectId, fact_id: String(fact.id || ''), label: String(fact.label || ''), fact_type: String(fact.type || 'state'), source_name: String(fact.line?.file || 'Unknown source'), scene_label: String(fact.line?.sceneLabel || 'Unknown scene'), line_number: Number(fact.line?.lineNumber || 0), excerpt: String(fact.line?.text || '').slice(0, 1200), locked_at: new Date().toISOString().replace('T', ' ').replace('Z', '') })), format: 'JSONEachRow' });
+    const result = await clickhouse.query({ query: `SELECT fact_id, label, fact_type, source_name, scene_label, line_number, excerpt FROM ${clickhouseDatabase}.canon_evidence WHERE project_id = {projectId:String} ORDER BY source_name, line_number LIMIT 120`, query_params: { projectId }, format: 'JSONEachRow' });
+    const evidence = await result.json();
+    const ai = createEnterpriseClient();
+    const prompt = `You are the storyIsStraight Canon Q&A Agent. Answer the question using ONLY the numbered approved evidence rows below. If the rows do not establish an answer, say that the canon does not contain enough evidence. Never infer hidden motives or invent events. Return concise JSON only with this exact shape: {"answer":"...","verdict":"supported|mixed|not_found","confidence":"high|medium|low","evidence_indices":[0]}. evidence_indices must contain only row numbers that directly support the answer.\n\nAPPROVED EVIDENCE:\n${evidence.map((row, index) => `[${index}] ${JSON.stringify(row)}`).join('\n')}\n\nQUESTION:\n${question.slice(0, 500)}`;
+    const completion = await ai.models.generateContent({ model: process.env.GEMINI_MODEL || 'gemini-2.5-flash', contents: prompt, config: { responseMimeType: 'application/json', temperature: 0.05 } });
+    const raw = completion.text || '{"answer":"The canon does not contain enough evidence.","verdict":"not_found","confidence":"low","evidence_indices":[]}';
+    let parsed;
+    try { parsed = JSON.parse(raw); } catch { parsed = { answer: 'The canon returned an unreadable answer. Try a narrower question.', verdict: 'not_found', confidence: 'low', evidence_indices: [] }; }
+    const indices = Array.isArray(parsed.evidence_indices) ? [...new Set(parsed.evidence_indices.map(Number).filter((index) => Number.isInteger(index) && index >= 0 && index < evidence.length))] : [];
+    const citations = indices.map((index) => evidence[index]);
+    const grounded = citations.length > 0 && String(parsed.verdict || '').toLowerCase() !== 'not_found';
+    return {
+      answer: grounded ? String(parsed.answer || 'The canon supports this, but Gemini did not provide a concise answer.') : 'The canon does not contain enough locked evidence to answer that confidently.',
+      verdict: grounded ? String(parsed.verdict || 'supported') : 'not_found',
+      confidence: grounded ? String(parsed.confidence || 'medium') : 'low',
+      citations,
+      trace: [
+        { label: 'Retrieved approved canon', detail: `${evidence.length} locked evidence row${evidence.length === 1 ? '' : 's'} loaded from ClickHouse.` },
+        { label: 'Gemini answered the question', detail: 'The response was constrained to the approved evidence rows.' },
+        { label: 'Validated source citations', detail: `${citations.length} citation${citations.length === 1 ? '' : 's'} matched retrieved evidence.` },
+        { label: 'Human approval remains required', detail: 'The answer does not change canon or lock new facts.' }
+      ]
+    };
+  } finally {
+    await clickhouse.close();
+  }
+}
+
 const server = createServer(async (request, response) => {
   if (request.url === '/api/health') return json(response, 200, { configured: configured(), provider: 'Gemini Enterprise + ClickHouse' });
   if (request.url === '/api/agent/review' && request.method === 'POST') {
@@ -167,6 +206,12 @@ const server = createServer(async (request, response) => {
     if (reviewRateLimited(request)) return json(response, 429, { error: 'AI request limit reached. Try again in 15 minutes.' });
     try { return json(response, 200, await extractCanonCandidatesWithCloud(await readJson(request))); }
     catch (error) { return json(response, 400, { error: error.message || 'AI canon extraction failed.' }); }
+  }
+  if (request.url === '/api/agent/ask-canon' && request.method === 'POST') {
+    if (!configured()) return json(response, 503, { error: 'Ask the canon is not configured. Set Google Cloud and ClickHouse environment variables on the server.' });
+    if (reviewRateLimited(request)) return json(response, 429, { error: 'AI request limit reached. Try again in 15 minutes.' });
+    try { return json(response, 200, await askCanonWithCloud(await readJson(request))); }
+    catch (error) { return json(response, 400, { error: error.message || 'Ask the canon failed.' }); }
   }
   const candidate = request.url === '/' ? '/index.html' : request.url.split('?')[0];
   const requestedPath = normalize(join(distDirectory, candidate));

@@ -49,6 +49,7 @@
             <button class="theme-button" id="theme-toggle" type="button" aria-pressed="false" title="Switch to light mode"><span aria-hidden="true">☼</span> Light</button>
             <button class="secondary-button" id="open-upload">+ Add pages</button>
             <button class="secondary-button cloud-button" id="open-canon-ai" type="button"><span class="spark">✦</span> Generate canon</button>
+            <button class="secondary-button cloud-button" id="open-canon-ask" type="button"><span class="spark">✦</span> Ask the canon</button>
             <button class="secondary-button cloud-button" id="open-cloud-review" type="button"><span class="spark">✦</span> AI evidence review</button>
             <button class="primary-button" id="run-analysis"><span class="spark">✦</span> Check continuity</button>
             <button class="secondary-button download-button" id="download-annotated" type="button" hidden>Download annotated PDF</button>
@@ -231,6 +232,19 @@
         <label class="cloud-consent"><input id="canon-ai-consent" type="checkbox" /> <span>I understand that this sends the current canon-source text to my configured Gemini Enterprise service. Candidate facts return to this browser for my review.</span></label>
         <p class="import-error" id="canon-ai-error" role="alert" hidden></p>
         <div class="import-footer"><span><i></i> Nothing is approved or locked automatically.</span><button class="primary-button" id="run-canon-ai" disabled>Generate reviewable candidates</button></div>
+      </div>
+    </dialog>
+    <dialog class="import-dialog cloud-dialog" id="canon-ask-dialog" aria-labelledby="canon-ask-title">
+      <div class="dialog-topline"><span>OPT-IN GROUNDED CANON Q&amp;A</span><button class="close-dialog" id="close-canon-ask" aria-label="Close Ask the Canon">×</button></div>
+      <div class="import-content">
+        <p class="eyebrow">GEMINI ENTERPRISE / EVIDENCE ONLY</p>
+        <h2 id="canon-ask-title">Ask what your story <em>knows.</em></h2>
+        <p class="import-intro">Ask a question about approved canon. Gemini can answer only from locked evidence retrieved from ClickHouse; if the evidence is missing, it will say so instead of guessing.</p>
+        <label class="canon-question-label" for="canon-question"><span>YOUR QUESTION</span><textarea id="canon-question" rows="3" maxlength="500" placeholder="Can Maya know the locker code in Episode 4?"></textarea></label>
+        <div class="ai-readiness" id="canon-ask-readiness" aria-live="polite"></div>
+        <label class="cloud-consent"><input id="canon-ask-consent" type="checkbox" /> <span>I understand that this sends my question and locked evidence excerpts to my configured Gemini Enterprise service.</span></label>
+        <p class="import-error" id="canon-ask-error" role="alert" hidden></p>
+        <div class="import-footer"><span><i></i> Answers include source citations.</span><button class="primary-button" id="run-canon-ask" disabled>Ask the canon</button></div>
       </div>
     </dialog>
     <dialog class="import-dialog manual-fact-dialog" id="manual-fact-dialog" aria-labelledby="manual-fact-title">

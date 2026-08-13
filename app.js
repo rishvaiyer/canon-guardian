@@ -110,6 +110,12 @@ const canonAiReadiness = document.querySelector('#canon-ai-readiness');
 const canonAiNextStep = document.querySelector('#canon-ai-next-step');
 const canonAiError = document.querySelector('#canon-ai-error');
 const canonAiButton = document.querySelector('#run-canon-ai');
+const canonAskDialog = document.querySelector('#canon-ask-dialog');
+const canonAskQuestion = document.querySelector('#canon-question');
+const canonAskConsent = document.querySelector('#canon-ask-consent');
+const canonAskReadiness = document.querySelector('#canon-ask-readiness');
+const canonAskError = document.querySelector('#canon-ask-error');
+const canonAskButton = document.querySelector('#run-canon-ask');
 const downloadAnnotated = document.querySelector('#download-annotated');
 let activeKey = 'code';
 let activeGraphNode = 0;
@@ -868,6 +874,14 @@ function cloudReviewPayload() {
   };
 }
 
+function canonAskPayload() {
+  const question = canonAskQuestion.value.trim();
+  const lockedFacts = projectLedger.facts.filter((fact) => fact.locked);
+  if (!question) throw new Error('Ask a specific question about the approved canon.');
+  if (!lockedFacts.length) throw new Error('Lock at least one canon fact before asking the canon.');
+  return { consent: true, projectTitle: projectTitle.textContent, question, lockedFacts };
+}
+
 function cloudRequirement(label, ready, detail) {
   return `<div class="ai-requirement ${ready ? 'ready' : 'waiting'}"><span>${ready ? '✓' : '○'}</span><div><b>${escapeHtml(label)}</b><small>${escapeHtml(detail)}</small></div></div>`;
 }
@@ -933,6 +947,32 @@ async function refreshCanonAiReadiness() {
   renderCanonAiReadiness();
 }
 
+function renderCanonAskReadiness() {
+  const lockedCount = projectLedger.facts.filter((fact) => fact.locked).length;
+  const hasQuestion = Boolean(canonAskQuestion?.value.trim());
+  const serviceReady = cloudConfigured === true;
+  canonAskReadiness.innerHTML = [
+    cloudRequirement('Your question', hasQuestion, hasQuestion ? 'Ready for a grounded answer.' : 'Ask one specific continuity question.'),
+    cloudRequirement('Approved canon', lockedCount > 0, lockedCount ? `${lockedCount} locked ${lockedCount === 1 ? 'fact is' : 'facts are'} available as evidence.` : 'Lock at least one fact first.'),
+    cloudRequirement('AI service', serviceReady, cloudConfigured === null ? 'Checking secure service connection…' : serviceReady ? 'Gemini Enterprise + ClickHouse connected.' : 'Cloud service is unavailable right now.'),
+    cloudRequirement('Your approval', canonAskConsent.checked, canonAskConsent.checked ? 'You approved sending this question and evidence.' : 'Consent is required before the request leaves this browser.')
+  ].join('');
+  canonAskButton.disabled = !(hasQuestion && lockedCount && serviceReady && canonAskConsent.checked);
+}
+
+async function refreshCanonAskReadiness() {
+  cloudConfigured = null;
+  renderCanonAskReadiness();
+  try {
+    const healthResponse = await fetch('/api/health', { cache: 'no-store' });
+    const health = await healthResponse.json();
+    cloudConfigured = Boolean(healthResponse.ok && health.configured);
+  } catch {
+    cloudConfigured = false;
+  }
+  renderCanonAskReadiness();
+}
+
 function canonCandidatePayload() {
   if (!storyMemory || currentImportRole !== 'canon') throw new Error('Import the trusted draft as a Canon source before generating candidates.');
   return {
@@ -981,6 +1021,36 @@ function renderAgentTrace(trace = []) {
   ];
   agentTrace.hidden = false;
   agentTrace.innerHTML = `<div class="trace-heading"><span class="eyebrow">CLOUD AGENT TRACE</span><span class="trace-badge">EVIDENCE-BOUND</span></div><div class="trace-steps">${steps.map((step, index) => `<div class="trace-step"><span class="trace-number">${String(index + 1).padStart(2, '0')}</span><span class="trace-dot" aria-hidden="true"></span><span><b>${escapeHtml(step.label || 'Agent step')}</b><small>${escapeHtml(step.detail || '')}</small></span></div>`).join('')}</div><p class="trace-footnote">Gemini proposes. ClickHouse remembers. You approve.</p>`;
+}
+
+function renderCanonAnswer(payload) {
+  const answer = String(payload?.answer || 'The canon does not contain enough evidence to answer that yet.');
+  const citations = Array.isArray(payload?.citations) ? payload.citations.slice(0, 5) : [];
+  const verdict = String(payload?.verdict || (citations.length ? 'SUPPORTED BY LOCKED EVIDENCE' : 'NOT ENOUGH EVIDENCE')).toUpperCase();
+  const citationMarkup = citations.length ? `<div class="answer-citations"><span class="response-kicker">SOURCES</span>${citations.map((citation) => `<div class="answer-citation"><b>${escapeHtml(citation.scene_label || citation.source_name || 'Canon source')}</b><small>${escapeHtml(citation.source_name || 'Locked source')}${citation.line_number ? ` · line ${escapeHtml(String(citation.line_number))}` : ''}</small><p>${escapeHtml(citation.excerpt || '')}</p></div>`).join('')}</div>` : '<p class="answer-unknown">No locked evidence directly supports this answer. Add or lock the missing fact before relying on it.</p>';
+  response.innerHTML = `<span class="response-kicker">ASK THE CANON · ${escapeHtml(verdict)}</span><p><b>${escapeHtml(answer)}</b></p>${citationMarkup}`;
+}
+
+async function runCanonAsk() {
+  canonAskButton.disabled = true;
+  canonAskButton.textContent = 'Asking Gemini…';
+  canonAskError.hidden = true;
+  try {
+    const serverResponse = await fetch('/api/agent/ask-canon', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(canonAskPayload()) });
+    const payload = await serverResponse.json();
+    if (!serverResponse.ok) throw new Error(payload.error || 'The canon question could not be answered.');
+    renderCanonAnswer(payload);
+    renderAgentTrace(payload.trace);
+    status.textContent = `Canon answer grounded in ${payload.citations?.length || 0} locked evidence ${payload.citations?.length === 1 ? 'source' : 'sources'}.`;
+    statusMeta.textContent = 'Gemini Enterprise · citations validated';
+    canonAskDialog.close();
+  } catch (error) {
+    canonAskError.textContent = error.message;
+    canonAskError.hidden = false;
+  } finally {
+    canonAskButton.textContent = 'Ask the canon';
+    renderCanonAskReadiness();
+  }
 }
 
 async function runCanonAi() {
@@ -1283,12 +1353,23 @@ document.querySelector('#open-canon-ai').addEventListener('click', async () => {
   canonAiDialog.showModal();
   await refreshCanonAiReadiness();
 });
+document.querySelector('#open-canon-ask').addEventListener('click', async () => {
+  canonAskError.hidden = true;
+  canonAskConsent.checked = false;
+  canonAskDialog.showModal();
+  canonAskQuestion.focus();
+  await refreshCanonAskReadiness();
+});
 document.querySelector('#close-cloud').addEventListener('click', () => { setCloudError(); cloudDialog.close(); });
 document.querySelector('#close-canon-ai').addEventListener('click', () => { setCanonAiError(); canonAiDialog.close(); });
+document.querySelector('#close-canon-ask').addEventListener('click', () => { canonAskError.hidden = true; canonAskDialog.close(); });
 cloudConsent.addEventListener('change', renderCloudReadiness);
 canonAiConsent.addEventListener('change', renderCanonAiReadiness);
+canonAskConsent.addEventListener('change', renderCanonAskReadiness);
+canonAskQuestion.addEventListener('input', renderCanonAskReadiness);
 cloudReviewButton.addEventListener('click', runCloudReview);
 canonAiButton.addEventListener('click', runCanonAi);
+canonAskButton.addEventListener('click', runCanonAsk);
 downloadAnnotated.addEventListener('click', downloadAnnotatedPdf);
 aiNextStep.addEventListener('click', () => {
   const action = aiNextStep.dataset.aiAction;
