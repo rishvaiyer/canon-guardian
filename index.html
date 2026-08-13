@@ -3,11 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#233c31" />
+    <meta name="theme-color" content="#111312" />
     <title>storyIsStraight — The Last Loop</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Lora:ital,wght@0,400;0,500;1,400;1,500&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -41,6 +41,7 @@
             <h1>Get your story <em>straight.</em></h1>
           </div>
           <div class="top-actions">
+            <button class="theme-button" id="theme-toggle" type="button" aria-pressed="false" title="Switch to light mode"><span aria-hidden="true">☼</span> Light</button>
             <button class="secondary-button" id="open-upload">+ Add to story</button>
             <button class="primary-button" id="run-analysis"><span class="spark">✦</span> Run story check</button>
           </div>
@@ -130,7 +131,7 @@
         <h2 id="import-title">Add the pages that make this world <em>true.</em></h2>
         <p class="import-intro">Import a pilot, rewrite, episode, outline, or character document. storyIsStraight keeps each file in the project’s memory so future pages can be checked against it.</p>
         <label class="drop-zone" id="drop-zone" for="script-upload">
-          <input id="script-upload" type="file" accept=".txt,.fountain,.fdx,.pdf,.doc,.docx" multiple />
+          <input id="script-upload" type="file" accept=".txt,.fountain,.fdx,.pdf,.docx" multiple />
           <span class="upload-icon">↥</span>
           <span class="upload-title">Drop scripts here or choose files</span>
           <span class="upload-help">Local extraction: PDF, Word .docx, .txt, Fountain, and Final Draft .fdx. No front-end file-size cap.</span>
@@ -138,9 +139,11 @@
         <div class="import-queue" id="import-queue" aria-live="polite">
           <p class="empty-queue">No pages in this import yet.</p>
         </div>
+        <p class="import-error" id="import-error" role="alert" hidden></p>
         <div class="import-footer"><span><i></i> Files stay on this device.</span><button class="primary-button" id="use-import" disabled>Build story memory</button></div>
       </div>
     </dialog>
+    <script type="module" src="theme.js"></script>
     <script type="module" src="app.js"></script>
   </body>
 </html>

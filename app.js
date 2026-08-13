@@ -66,6 +66,7 @@ const importDialog = document.querySelector('#import-dialog');
 const uploadInput = document.querySelector('#script-upload');
 const dropZone = document.querySelector('#drop-zone');
 const importQueue = document.querySelector('#import-queue');
+const importError = document.querySelector('#import-error');
 const useImport = document.querySelector('#use-import');
 const projectTitle = document.querySelector('#project-title');
 const projectMeta = document.querySelector('#project-meta');
@@ -320,10 +321,17 @@ function renderImportQueue() {
     <div class="queued-file"><span class="file-type">${escapeHtml(documentKind(file))}</span><span class="file-detail"><span class="file-name">${escapeHtml(file.name)}</span><span class="file-status">${formatSize(file.size)} · ready for local extraction</span></span><button class="remove-file" data-remove-file="${index}" aria-label="Remove ${escapeHtml(file.name)}">×</button></div>`).join('');
 }
 
+function setImportError(message = '') {
+  importError.hidden = !message;
+  importError.textContent = message;
+}
+
 function addFiles(files) {
   const allowable = Array.from(files).filter((file) => /\.(txt|fountain|fdx|pdf|docx)$/i.test(file.name));
   const newFiles = allowable.filter((file) => !stagedFiles.some(({ file: staged }) => staged.name === file.name && staged.size === file.size));
   stagedFiles = [...stagedFiles, ...newFiles.map((file) => ({ file }))];
+  uploadInput.value = '';
+  setImportError();
   renderImportQueue();
 }
 
@@ -387,6 +395,7 @@ async function extractFile(file, onProgress) {
 }
 
 async function buildStoryMemory() {
+  setImportError();
   useImport.disabled = true;
   useImport.textContent = 'Reading documents…';
   const extracted = [];
@@ -412,6 +421,7 @@ async function buildStoryMemory() {
   } catch (error) {
     status.textContent = `Could not read the selected file: ${error.message}`;
     statusMeta.textContent = 'Nothing was uploaded or sent';
+    setImportError(`Could not read this document. ${error.message} Remove it or choose another file.`);
   } finally {
     useImport.textContent = 'Build story memory';
     useImport.disabled = !stagedFiles.length;
@@ -419,13 +429,15 @@ async function buildStoryMemory() {
 }
 
 document.querySelector('#open-upload').addEventListener('click', () => importDialog.showModal());
-document.querySelector('#close-upload').addEventListener('click', () => importDialog.close());
+document.querySelector('#close-upload').addEventListener('click', () => { setImportError(); importDialog.close(); });
 uploadInput.addEventListener('change', (event) => addFiles(event.target.files));
 useImport.addEventListener('click', buildStoryMemory);
 importQueue.addEventListener('click', (event) => {
   const remove = event.target.closest('[data-remove-file]');
   if (!remove) return;
   stagedFiles.splice(Number(remove.dataset.removeFile), 1);
+  uploadInput.value = '';
+  setImportError();
   renderImportQueue();
 });
 ['dragenter', 'dragover'].forEach((eventName) => dropZone.addEventListener(eventName, (event) => {
