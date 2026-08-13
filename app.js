@@ -1,4 +1,5 @@
 import mammoth from 'mammoth';
+import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
 
@@ -102,6 +103,7 @@ const canonAiReadiness = document.querySelector('#canon-ai-readiness');
 const canonAiNextStep = document.querySelector('#canon-ai-next-step');
 const canonAiError = document.querySelector('#canon-ai-error');
 const canonAiButton = document.querySelector('#run-canon-ai');
+const downloadAnnotated = document.querySelector('#download-annotated');
 let activeKey = 'code';
 let activeGraphNode = 0;
 let activeCharacter = 'ALL';
@@ -111,6 +113,9 @@ let stagedFiles = [];
 let storyMemory = null;
 let currentImportRole = 'canon';
 let cloudConfigured = null;
+let sourcePdfFile = null;
+let sourcePdfPageLineCounts = [];
+let currentAnnotations = [];
 const projectStorageKey = 'story-is-straight-project-v3';
 let projectLedger = { title: '', sources: [], facts: [] };
 
@@ -247,6 +252,7 @@ function buildLocalStoryMemory(files) {
   files.forEach((entry) => {
     let sceneNumber = 0;
     let currentScene = '';
+    const pageLineCounts = entry.pageLineCounts || [];
     entry.text.split(/\r?\n/).forEach((rawText, lineNumber) => {
       const text = rawText.trim();
       if (!text) return;
@@ -255,10 +261,23 @@ function buildLocalStoryMemory(files) {
         currentScene = `Scene ${sceneNumber}: ${cleanExcerpt(text, 46)}`;
       }
       if (sceneNumber && isLikelySpeaker(text)) characters.add(cleanName(text));
+      let pageNumber = 0;
+      let pageY = 0;
+      if (pageLineCounts.length) {
+        let consumed = 0;
+        const pageIndex = pageLineCounts.findIndex((count) => {
+          consumed += count;
+          return lineNumber < consumed;
+        });
+        pageNumber = pageIndex + 1;
+        pageY = entry.pageLineYPositions?.[pageIndex]?.[lineNumber - (consumed - pageLineCounts[pageIndex])];
+      }
       lines.push({
         text,
         file: entry.file.name,
         lineNumber: lineNumber + 1,
+        pageNumber,
+        pageY,
         index: sourceOrder++,
         sceneNumber,
         sceneLabel: currentScene || 'Front matter'
@@ -290,8 +309,8 @@ function buildLocalStoryMemory(files) {
     const revealMatch = line.text.match(/\b(?:learns?|discovers?|reveals?|tells?\s+\w+|hears?)\b[^.]{0,80}\b(\d(?:[\d -]*\d){2,})\b/i);
     if (revealMatch) addFact('knowledge', `Code ${revealMatch[1].replace(/\D/g, '')} becomes known`, line, 'Knowledge state');
 
-    const objectMatch = line.text.match(/\b([A-Za-z][A-Za-z -]{1,30})\b[^.]{0,60}\b(?:burns|shatters|breaks|is destroyed|is gone)\b/i);
-    if (objectMatch && !/\b(?:he|she|they|it)\b/i.test(objectMatch[1])) {
+    const objectMatch = line.sceneNumber && line.text.match(/\b([A-Za-z][A-Za-z -]{1,30})\b\s+(?:burns|shatters|breaks|is destroyed|is gone)\b/i);
+    if (objectMatch && !/\b(?:he|she|they|it|script|revision|output)\b/i.test(objectMatch[1])) {
       addFact('destroyed', `${cleanExcerpt(objectMatch[1], 28)} is destroyed or gone`, line, 'Object state');
     }
   });
@@ -316,6 +335,11 @@ function makeImportedIssue(number, severity, title, summary, condition, conflict
       [condition.sceneLabel, cleanExcerpt(condition.text, 58), sourceRef(condition)],
       [conflict.sceneLabel, cleanExcerpt(conflict.text, 58), `Conflicting claim · ${sourceRef(conflict)}`],
       downstreamNode ? [downstreamNode.sceneLabel, cleanExcerpt(downstreamNode.text, 58), `Later beat to review · ${sourceRef(downstreamNode)}`] : ['NEXT PASS', 'No direct later reference extracted', 'Add more pages for downstream tracing']
+    ],
+    annotationLines: [
+      { ...condition, annotationRole: 'Earlier canon' },
+      { ...conflict, annotationRole: 'Conflicting revision' },
+      ...(downstreamNode ? [{ ...downstreamNode, annotationRole: 'Downstream beat' }] : [])
     ]
   };
 }
@@ -578,6 +602,8 @@ function renderIssueList() {
 function renderImpact(key) {
   activeKey = key;
   const issue = issues[key];
+  currentAnnotations = issue?.annotationLines || [];
+  downloadAnnotated.hidden = !(sourcePdfFile && currentAnnotations.length);
   renderIssueList();
   copyRoot.innerHTML = `<p class="eyebrow">${escapeHtml(issue.evidence)}</p><h3>${escapeHtml(issue.heading)}</h3><p>${escapeHtml(issue.copy)}</p>`;
   const positions = [[44, 190], [42, 300], [59, 83]];
@@ -596,6 +622,8 @@ document.addEventListener('click', selectIssue);
 document.querySelector('#show-ledger').addEventListener('click', () => document.querySelector('#canon').scrollIntoView({ behavior: 'smooth' }));
 
 function renderNoImportedBreaks() {
+  currentAnnotations = [];
+  downloadAnnotated.hidden = true;
   issuesRoot.innerHTML = '<p class="empty-queue">No deterministic contradictions found in these sources.</p>';
   copyRoot.innerHTML = '<p class="eyebrow">LOCAL CHECK COMPLETE</p><h3>No hard conflicts surfaced.</h3><p>The imported pages were indexed for explicit deaths, injuries, phone states, and numeric-code reveals. Add another revision or more concrete scene action to deepen the comparison.</p>';
   nodesRoot.innerHTML = '';
@@ -632,6 +660,8 @@ function renderImportedStoryOverview(memory, role, totalPages) {
 }
 
 function renderCanonBaselineReady(memory) {
+  currentAnnotations = [];
+  downloadAnnotated.hidden = true;
   const sceneCount = memory.sceneCount || 0;
   issuesRoot.innerHTML = '<p class="empty-queue">Baseline indexed — no revision has been compared yet.</p>';
   copyRoot.innerHTML = `<p class="eyebrow">CANON BASELINE READY</p><h3>Nothing is “broken” yet.</h3><p>You added one source of truth. storyIsStraight indexed ${sceneCount || 'the'} screenplay ${sceneCount === 1 ? 'scene' : 'scenes'} and only proposes explicit, named states as canon. Import a later draft as an Incoming revision to reveal changes that conflict with approved locks.</p>`;
@@ -641,6 +671,8 @@ function renderCanonBaselineReady(memory) {
 }
 
 function renderRevisionNeedsLocks() {
+  currentAnnotations = [];
+  downloadAnnotated.hidden = true;
   issuesRoot.innerHTML = '<p class="empty-queue">No approved canon locks available for this comparison.</p>';
   copyRoot.innerHTML = '<p class="eyebrow">REVISION INDEXED</p><h3>Choose what must stay true first.</h3><p>This incoming draft is mapped, but a comparison needs at least one approved fact from a canon source. Import the baseline, lock the facts you trust, then add this revision again.</p>';
   nodesRoot.innerHTML = '';
@@ -964,6 +996,100 @@ async function runCloudReview() {
   }
 }
 
+function drawPdfWrapped(page, text, x, y, width, font, size, color = rgb(0.15, 0.15, 0.12), leading = 13) {
+  const words = String(text || '').split(/\s+/);
+  let line = '';
+  let cursor = y;
+  words.forEach((word) => {
+    const candidate = `${line} ${word}`.trim();
+    if (font.widthOfTextAtSize(candidate, size) > width && line) {
+      page.drawText(line, { x, y: cursor, size, font, color });
+      cursor -= leading;
+      line = word;
+    } else line = candidate;
+  });
+  if (line) {
+    page.drawText(line, { x, y: cursor, size, font, color });
+    cursor -= leading;
+  }
+  return cursor;
+}
+
+function linePageAndPosition(line, pageCount) {
+  if (!sourcePdfPageLineCounts.length) return { pageIndex: 0, lineWithinPage: 3 };
+  let consumed = 0;
+  for (let index = 0; index < sourcePdfPageLineCounts.length; index += 1) {
+    const count = sourcePdfPageLineCounts[index];
+    if (line.pageNumber === index + 1 || line.lineNumber <= consumed + count) {
+      return { pageIndex: Math.min(index, pageCount - 1), lineWithinPage: Math.max(0, line.lineNumber - consumed - 1), pageY: line.pageY };
+    }
+    consumed += count;
+  }
+  return { pageIndex: pageCount - 1, lineWithinPage: 3 };
+}
+
+async function downloadAnnotatedPdf() {
+  if (!sourcePdfFile || !currentAnnotations.length) return;
+  downloadAnnotated.disabled = true;
+  downloadAnnotated.textContent = 'Preparing annotated PDF…';
+  try {
+    const pdf = await PDFDocument.load(await sourcePdfFile.arrayBuffer());
+    const regular = await pdf.embedFont(StandardFonts.Helvetica);
+    const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+    const seen = new Set();
+    const palette = {
+      'Earlier canon': { fill: rgb(0.95, 0.72, 0.22), label: 'CANON' },
+      'Conflicting revision': { fill: rgb(0.93, 0.38, 0.25), label: 'BREAK' },
+      'Downstream beat': { fill: rgb(0.48, 0.72, 0.56), label: 'IMPACT' }
+    };
+    currentAnnotations.forEach((line) => {
+      const key = `${line.file}|${line.lineNumber}|${line.annotationRole}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      const { pageIndex, lineWithinPage, pageY } = linePageAndPosition(line, pdf.getPageCount());
+      const page = pdf.getPages()[pageIndex];
+      const height = page.getHeight();
+      const width = page.getWidth();
+      const y = Math.max(52, pageY || (height - 78 - (lineWithinPage * 14)));
+      const colorsForRole = palette[line.annotationRole] || palette['Conflicting revision'];
+      page.drawRectangle({ x: 46, y: y - 3, width: width - 92, height: 15, color: colorsForRole.fill, opacity: 0.32, borderColor: colorsForRole.fill, borderOpacity: 0.75, borderWidth: 0.7 });
+      page.drawText(colorsForRole.label, { x: width - 86, y: y + 1, size: 6.5, font: bold, color: colorsForRole.fill });
+    });
+    let report = pdf.addPage([612, 792]);
+    report.drawRectangle({ x: 0, y: 0, width: 612, height: 792, color: rgb(0.97, 0.96, 0.92) });
+    report.drawText('storyIsStraight', { x: 54, y: 710, size: 25, font: bold, color: rgb(0.14, 0.14, 0.12) });
+    report.drawText('ANNOTATED CONTINUITY REVIEW', { x: 54, y: 681, size: 9, font: bold, color: rgb(0.65, 0.39, 0.12) });
+    report.drawText('Highlighted pages show the evidence path behind this review.', { x: 54, y: 650, size: 10, font: regular, color: rgb(0.35, 0.35, 0.31) });
+    let y = 610;
+    Object.values(issues).slice(0, 8).forEach((issue, index) => {
+      report.drawText(`${String(index + 1).padStart(2, '0')}  ${issue.title || 'Continuity finding'}`, { x: 54, y, size: 11, font: bold, color: rgb(0.14, 0.14, 0.12) });
+      y -= 17;
+      y = drawPdfWrapped(report, issue.copy || issue.summary || 'Review the highlighted source lines.', 72, y, 480, regular, 9, rgb(0.33, 0.33, 0.30), 13);
+      y -= 15;
+      if (y < 92) {
+        report = pdf.addPage([612, 792]);
+        report.drawRectangle({ x: 0, y: 0, width: 612, height: 792, color: rgb(0.97, 0.96, 0.92) });
+        y = 720;
+      }
+    });
+    const bytes = await pdf.save();
+    const blob = new Blob([bytes], { type: 'application/pdf' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `${sourcePdfFile.name.replace(/\.pdf$/i, '')}-annotated.pdf`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+    status.textContent = 'Annotated PDF downloaded with highlighted evidence and a review appendix.';
+    statusMeta.textContent = `${seen.size} highlighted source lines · local-only export`;
+  } catch (error) {
+    status.textContent = `Could not create the annotated PDF: ${error.message}`;
+    statusMeta.textContent = 'Original PDF was not changed';
+  } finally {
+    downloadAnnotated.disabled = false;
+    downloadAnnotated.textContent = 'Download annotated PDF';
+  }
+}
+
 function addFiles(files) {
   const allowable = Array.from(files).filter((file) => /\.(txt|fountain|fdx|pdf|docx)$/i.test(file.name));
   const newFiles = allowable.filter((file) => !stagedFiles.some(({ file: staged }) => staged.name === file.name && staged.size === file.size));
@@ -981,26 +1107,38 @@ async function extractPdf(file, onProgress) {
   const loadingTask = getDocument({ data: new Uint8Array(await file.arrayBuffer()) });
   const pdf = await loadingTask.promise;
   const pages = [];
+  const pageLineYPositions = [];
   for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
     onProgress(`Reading ${file.name}: page ${pageNumber} of ${pdf.numPages}`);
     const page = await pdf.getPage(pageNumber);
     const content = await page.getTextContent();
     const pageLines = [];
+    const lineYPositions = [];
     let activeLine = [];
+    let activeLineY = null;
     let previousY = null;
     content.items.forEach((item) => {
       const y = item.transform?.[5];
       if (previousY !== null && Number.isFinite(y) && Math.abs(y - previousY) > 2.5 && activeLine.length) {
         pageLines.push(activeLine.join(' '));
+        lineYPositions.push(activeLineY);
         activeLine = [];
+        activeLineY = null;
       }
-      if (item.str) activeLine.push(item.str);
+      if (item.str) {
+        activeLine.push(item.str);
+        if (activeLineY === null && Number.isFinite(y)) activeLineY = y;
+      }
       if (Number.isFinite(y)) previousY = y;
     });
-    if (activeLine.length) pageLines.push(activeLine.join(' '));
+    if (activeLine.length) {
+      pageLines.push(activeLine.join(' '));
+      lineYPositions.push(activeLineY);
+    }
     pages.push(pageLines.join('\n'));
+    pageLineYPositions.push(lineYPositions);
   }
-  return { text: pages.join('\n'), pages: pdf.numPages };
+  return { text: pages.join('\n'), pages: pdf.numPages, pageLineCounts: pages.map((page) => page.split(/\r?\n/).length), pageLineYPositions };
 }
 
 async function extractFdx(file) {
@@ -1045,6 +1183,9 @@ async function buildStoryMemory() {
     const totalScenes = extracted.reduce((total, file) => total + file.scenes, 0);
     const totalPages = extracted.reduce((total, file) => total + file.pages, 0);
     const primaryFile = extracted[0].file;
+    const pdfEntry = extracted.find((entry) => /\.pdf$/i.test(entry.file.name));
+    sourcePdfFile = pdfEntry?.file || null;
+    sourcePdfPageLineCounts = pdfEntry?.pageLineCounts || [];
     storyMemory = buildLocalStoryMemory(extracted);
     currentImportRole = importRole.value;
     if (!projectLedger.title || currentImportRole === 'canon') projectLedger.title = primaryFile.name.replace(/\.[^.]+$/, '');
@@ -1091,6 +1232,7 @@ cloudConsent.addEventListener('change', renderCloudReadiness);
 canonAiConsent.addEventListener('change', renderCanonAiReadiness);
 cloudReviewButton.addEventListener('click', runCloudReview);
 canonAiButton.addEventListener('click', runCanonAi);
+downloadAnnotated.addEventListener('click', downloadAnnotatedPdf);
 aiNextStep.addEventListener('click', () => {
   const action = aiNextStep.dataset.aiAction;
   cloudDialog.close();
