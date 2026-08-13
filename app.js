@@ -309,10 +309,6 @@ function buildLocalStoryMemory(files) {
     const revealMatch = line.text.match(/\b(?:learns?|discovers?|reveals?|tells?\s+\w+|hears?)\b[^.]{0,80}\b(\d(?:[\d -]*\d){2,})\b/i);
     if (revealMatch) addFact('knowledge', `Code ${revealMatch[1].replace(/\D/g, '')} becomes known`, line, 'Knowledge state');
 
-    const objectMatch = line.sceneNumber && line.text.match(/\b([A-Za-z][A-Za-z -]{1,30})\b\s+(?:burns|shatters|breaks|is destroyed|is gone)\b/i);
-    if (objectMatch && !/\b(?:he|she|they|it|script|revision|output)\b/i.test(objectMatch[1])) {
-      addFact('destroyed', `${cleanExcerpt(objectMatch[1], 28)} is destroyed or gone`, line, 'Object state');
-    }
   });
 
   const uniqueFacts = facts.filter((fact, index) => facts.findIndex((candidate) => candidate.type === fact.type && candidate.label === fact.label && candidate.line.file === fact.line.file) === index);
@@ -372,11 +368,20 @@ function analyzeImportedMemory(memory) {
     if (later) add(makeImportedIssue(count + 1, 'MEDIUM', `An injured ${side} ${bodyPart} performs a precise action`, `The imported pages establish the ${side} ${bodyPart} as impaired, then use it in a later action.`, fact.line, later, 'injury', findDownstream(memory.lines, later.index, [side, bodyPart])));
   });
 
-  memory.facts.filter((fact) => fact.type === 'knowledge').forEach((fact) => {
+  const inferredKnowledgeFacts = memory.lines.flatMap((line) => {
+    const reveal = line.text.match(/\b(?:learns?|discovers?|reveals?)\b[^.]{0,80}\b(\d(?:[\d -]*\d){2,})\b/i);
+    return reveal ? [{ type: 'knowledge', label: `Code ${reveal[1].replace(/\D/g, '')} becomes known`, detail: 'Knowledge state', line }] : [];
+  });
+  const knowledgeFacts = [...memory.facts.filter((fact) => fact.type === 'knowledge'), ...projectLedger.facts.filter((fact) => fact.locked && fact.type === 'knowledge'), ...inferredKnowledgeFacts]
+    .filter((fact, index, all) => all.findIndex((candidate) => factId(candidate) === factId(fact)) === index);
+  knowledgeFacts.forEach((fact) => {
     const code = fact.label.match(/\d+/)?.[0];
     if (!code) return;
     const flexibleCode = code.split('').join('[ -]*');
-    const usedEarly = memory.lines.find((line) => line.index < fact.line.index && new RegExp(`\\b(?:keys?|types?|enters?)\\b[^.]{0,70}${flexibleCode}`, 'i').test(line.text));
+    const revisionLines = memory.lines.filter((line) => line.origin === 'revision');
+    const revisionReveal = revisionLines.find((line) => new RegExp(`\\b(?:learns?|discovers?|reveals?)\\b[^.]{0,80}${flexibleCode}`, 'i').test(line.text));
+    const usedEarly = revisionLines.find((line) => new RegExp(flexibleCode, 'i').test(line.text) && (Boolean(revisionReveal && line.index < revisionReveal.index) || /\\b(?:before|already|all night|earlier|prior)\\b/i.test(line.text)))
+      || memory.lines.find((line) => new RegExp(flexibleCode, 'i').test(line.text) && /\\b(?:before|already|all night|earlier|prior)\\b/i.test(line.text));
     if (usedEarly) add(makeImportedIssue(count + 1, 'HIGH', `Code ${code} is used before it is learned`, `The code is used earlier than its recorded reveal.`, fact.line, usedEarly, 'knowledge', findDownstream(memory.lines, fact.line.index, [code])));
   });
 
@@ -602,7 +607,7 @@ function renderIssueList() {
 function renderImpact(key) {
   activeKey = key;
   const issue = issues[key];
-  currentAnnotations = issue?.annotationLines || [];
+  currentAnnotations = Object.values(issues).flatMap((finding) => finding.annotationLines || []);
   downloadAnnotated.hidden = !(sourcePdfFile && currentAnnotations.length);
   renderIssueList();
   copyRoot.innerHTML = `<p class="eyebrow">${escapeHtml(issue.evidence)}</p><h3>${escapeHtml(issue.heading)}</h3><p>${escapeHtml(issue.copy)}</p>`;
@@ -712,8 +717,8 @@ function reviewCurrentStory() {
 function revisionReviewMemory() {
   const locks = projectLedger.facts.filter((fact) => fact.locked);
   if (currentImportRole !== 'revision' || !locks.length || !storyMemory) return storyMemory;
-  const lockedLines = locks.map((fact, index) => ({ ...fact.line, index: index - locks.length - 1 }));
-  const revisionLines = storyMemory.lines.map((line, index) => ({ ...line, index: index + 1 }));
+  const lockedLines = locks.map((fact, index) => ({ ...fact.line, origin: 'canon', index: index - locks.length - 1, canonIndex: fact.line.index }));
+  const revisionLines = storyMemory.lines.map((line, index) => ({ ...line, origin: 'revision', index: index + 1 }));
   return { facts: locks, lines: [...lockedLines, ...revisionLines], characters: storyMemory.characters };
 }
 
