@@ -6,10 +6,13 @@ import { stat } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { extname, join, normalize } from 'node:path';
 
-const port = Number(process.env.AGENT_PORT || 8787);
+const port = Number(process.env.PORT || process.env.AGENT_PORT || 8787);
 const maxRequestBytes = 900_000;
+const reviewWindowMs = 15 * 60 * 1000;
+const reviewLimit = Number(process.env.CLOUD_REVIEW_RATE_LIMIT || 5);
 const distDirectory = join(process.cwd(), 'dist');
 const clickhouseDatabase = (process.env.CLICKHOUSE_DATABASE || 'story_is_straight').replace(/[^A-Za-z0-9_]/g, '');
+const reviewBuckets = new Map();
 
 function configured() {
   return Boolean(process.env.GOOGLE_CLOUD_PROJECT && process.env.CLICKHOUSE_HOST && Object.hasOwn(process.env, 'CLICKHOUSE_PASSWORD'));
@@ -35,6 +38,39 @@ async function readJson(request) {
 
 function safeProjectName(value) {
   return String(value || 'Untitled story').slice(0, 140);
+}
+
+function reviewRateLimited(request) {
+  const now = Date.now();
+  const key = request.headers['x-forwarded-for']?.split(',')[0].trim() || request.socket.remoteAddress || 'unknown';
+  const active = (reviewBuckets.get(key) || []).filter((timestamp) => now - timestamp < reviewWindowMs);
+  active.push(now);
+  reviewBuckets.set(key, active);
+  return active.length > reviewLimit;
+}
+
+function createEnterpriseClient() {
+  let googleAuthOptions;
+  if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
+    try {
+      const serviceAccount = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+      googleAuthOptions = {
+        credentials: {
+          client_email: serviceAccount.client_email,
+          private_key: serviceAccount.private_key,
+          project_id: serviceAccount.project_id
+        }
+      };
+    } catch {
+      throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON is not valid JSON.');
+    }
+  }
+  return new GoogleGenAI({
+    enterprise: true,
+    project: process.env.GOOGLE_CLOUD_PROJECT,
+    location: process.env.GOOGLE_CLOUD_LOCATION || 'us-central1',
+    googleAuthOptions
+  });
 }
 
 async function reviewWithCloud(body) {
@@ -73,7 +109,7 @@ async function reviewWithCloud(body) {
       format: 'JSONEachRow'
     });
     const evidence = await result.json();
-    const ai = new GoogleGenAI({ enterprise: true, project: process.env.GOOGLE_CLOUD_PROJECT, location: process.env.GOOGLE_CLOUD_LOCATION || 'us-central1' });
+    const ai = createEnterpriseClient();
     const prompt = `You are the storyIsStraight Continuity Agent. Review an incoming draft against approved canon evidence retrieved from ClickHouse. Return concise JSON only with this exact shape: {"summary":"...","findings":[{"severity":"critical|high|medium|low","title":"...","why":"...","evidence":"source · scene · line","smallest_repair":"..."}]}. Only make a finding when you can cite an evidence row. Do not invent facts.\n\nAPPROVED CANON EVIDENCE:\n${JSON.stringify(evidence)}\n\nINCOMING DRAFT:\n${revisionText.slice(0, 120000)}`;
     const completion = await ai.models.generateContent({ model: process.env.GEMINI_MODEL || 'gemini-2.5-flash', contents: prompt, config: { responseMimeType: 'application/json', temperature: 0.15 } });
     const raw = completion.text || '{"summary":"Gemini returned no text.","findings":[]}';
@@ -89,6 +125,7 @@ const server = createServer(async (request, response) => {
   if (request.url === '/api/health') return json(response, 200, { configured: configured(), provider: 'Gemini Enterprise + ClickHouse' });
   if (request.url === '/api/agent/review' && request.method === 'POST') {
     if (!configured()) return json(response, 503, { error: 'Cloud review is not configured. Set Google Cloud ADC/project and ClickHouse environment variables on the server.' });
+    if (reviewRateLimited(request)) return json(response, 429, { error: 'Cloud review limit reached. Try again in 15 minutes.' });
     try { return json(response, 200, await reviewWithCloud(await readJson(request))); }
     catch (error) { return json(response, 400, { error: error.message || 'Cloud review failed.' }); }
   }
@@ -101,4 +138,5 @@ const server = createServer(async (request, response) => {
   createReadStream(requestedPath).pipe(response);
 });
 
-server.listen(port, '127.0.0.1', () => console.log(`storyIsStraight agent server on http://127.0.0.1:${port}`));
+const host = process.env.RAILWAY_ENVIRONMENT ? '0.0.0.0' : '127.0.0.1';
+server.listen(port, host, () => console.log(`storyIsStraight agent server on http://${host}:${port}`));

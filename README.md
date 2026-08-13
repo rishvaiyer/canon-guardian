@@ -18,7 +18,7 @@ The included project, **The Last Loop**, is original demo data. The default work
 
 The local workflow is the default. Cloud review is an explicit, per-review opt-in: it sends only the current incoming-draft text and user-locked canon evidence to the configured cloud services. The server stores evidence rows in ClickHouse; it does not persist the full draft there.
 
-1. Copy `.env.example` to your secret store or local environment. Authenticate Google Cloud with Application Default Credentials (`gcloud auth application-default login`), set your Google Cloud project/location, enable billing and Vertex AI, and configure a ClickHouse Cloud service.
+1. Copy `.env.example` to your secret store or local environment. Authenticate local development with Application Default Credentials (`gcloud auth application-default login`); hosted deployments use a sealed service-account JSON variable. Set your Google Cloud project/location, enable billing and Gemini Enterprise Agent Platform, and configure a private ClickHouse service.
 2. Build the app and run the combined app/API server:
 
 ```bash
