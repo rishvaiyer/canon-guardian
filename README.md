@@ -84,6 +84,8 @@ Cloud review responses use `analysis_version: continuity-crew-v2` and support ei
 
 The response also includes evidence-backed impact scope, confidence, repair options, scored `repair_plan` entries, and aggregate metrics. CanonCue's transparent heuristic ranks each finding with evidence strength (30%), contradiction strength (25%), downstream blast radius (25%), timeline certainty (10%), and Gemini confidence (10%). Repair options are scored separately for canon preservation (40%), blast-radius reduction (30%), edit effort (20%), and confidence (10%). These are explainable decision aids, not a trained replacement for editorial judgment.
 
+The repair simulator captures optional writer decisions—accept repair, mark intentional, or dismiss—locally without storing screenplay text. The export center can download those decisions as CSV so a future calibration job can learn better weights from real editorial outcomes.
+
 ## Run locally
 
 Requirements: Node.js 22+ and npm.

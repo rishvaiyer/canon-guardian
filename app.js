@@ -139,7 +139,9 @@ let sourcePdfPageLineYPositions = [];
 let currentAnnotations = [];
 let importedFiles = [];
 const projectStorageKey = 'story-is-straight-project-v3';
+const feedbackStorageKey = 'canoncue-review-feedback-v1';
 let projectLedger = { title: '', sources: [], facts: [] };
+let reviewFeedback = [];
 
 const sceneHeadingPattern = /^(?:INT\.?|EXT\.?|INT\/EXT\.?|I\/E\.?)(?![A-Za-z])/i;
 const speakerPattern = /^[A-Z][A-Z .'-]{1,34}$/;
@@ -202,6 +204,41 @@ function readProjectLedger() {
 
 function saveProjectLedger() {
   try { localStorage.setItem(projectStorageKey, JSON.stringify(projectLedger)); } catch { /* Browser storage can be unavailable or full. */ }
+}
+
+function readReviewFeedback() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(feedbackStorageKey) || '[]');
+    reviewFeedback = Array.isArray(stored) ? stored.slice(-500) : [];
+  } catch {
+    reviewFeedback = [];
+  }
+}
+
+function saveReviewFeedback() {
+  try { localStorage.setItem(feedbackStorageKey, JSON.stringify(reviewFeedback.slice(-500))); } catch { /* Feedback is optional and local-only. */ }
+}
+
+function recordReviewFeedback(key, action, repairLabel = '', selectedIndex = 0) {
+  const issue = issues[key];
+  if (!issue) return;
+  reviewFeedback.push({
+    recordedAt: new Date().toISOString(),
+    project: projectLedger.title || projectTitle.textContent || 'CanonCue project',
+    finding_key: key,
+    finding_type: issue.findingType || 'local_continuity_finding',
+    severity: issue.severity || 'REVIEW',
+    finding_score: Number.isFinite(issue.findingScore) ? issue.findingScore : null,
+    score_breakdown: issue.scoreBreakdown || null,
+    impact_scope: issue.impactScope || null,
+    action,
+    repair: repairLabel || null
+  });
+  saveReviewFeedback();
+  const actionLabel = action === 'accepted_repair' ? 'Repair decision saved' : action === 'marked_intentional' ? 'Intentional change saved' : 'Finding dismissal saved';
+  status.textContent = `${actionLabel}. Feedback stays in this browser for future score calibration.`;
+  statusMeta.textContent = `${reviewFeedback.length} local review decision${reviewFeedback.length === 1 ? '' : 's'}`;
+  renderRepairSimulator(key, selectedIndex, true, true);
 }
 
 function mergeFactsIntoLedger(facts, seriesMeta = null) {
@@ -730,7 +767,7 @@ function renderImpact(key) {
   response.innerHTML = `<span class="response-kicker">${escapeHtml(issue.number)} / ${escapeHtml(issue.severity)}</span><p><b>${escapeHtml(issue.title)}.</b> I found a source-backed conflict and mapped the next beat to review. The smallest repair is usually to revise this scene before changing the ending.</p>`;
 }
 
-function renderRepairSimulator(key, selectedIndex = 0, simulated = false) {
+function renderRepairSimulator(key, selectedIndex = 0, simulated = false, feedbackSaved = false) {
   if (!repairSimulator) return;
   const issue = issues[key];
   if (!issue) return;
@@ -743,10 +780,11 @@ function renderRepairSimulator(key, selectedIndex = 0, simulated = false) {
     <div class="repair-sim-head"><div><span class="eyebrow">REPAIR SIMULATOR</span><h3>${simulated ? 'Preview ready' : 'Choose the smallest safe edit.'}</h3></div><span class="repair-score">${simulated ? 'PREVIEW ONLY' : `${options.length} PATH${options.length === 1 ? '' : 'S'}`}</span></div>
     <p class="repair-sim-intro">CanonCue ranks repairs by how much canon they preserve. Nothing changes in your source until you approve it.</p>
     <div class="repair-options">${options.slice(0, 3).map((option, index) => `<button type="button" class="repair-option ${index === selectedIndex ? 'active' : ''}" data-repair-option="${index}"><span>${String(index + 1).padStart(2, '0')}</span><b>${escapeHtml(option)}</b><small>${index === 0 ? 'Smallest edit · preserves approved canon' : 'Alternative · requires editorial decision'}</small></button>`).join('')}</div>
-    <div class="repair-preview"><span class="repair-label">${simulated ? 'PROPOSED CHANGE' : 'CURRENT CLAIM'}</span><p>${escapeHtml(simulated ? `${sourceClaim} → ${selected}` : sourceClaim)}</p><button type="button" class="text-button" data-simulate-repair="${escapeHtml(key)}" data-repair-selected="${selectedIndex}">${simulated ? 'Reset preview' : 'Simulate this repair ↗'}</button></div>`;
+    <div class="repair-preview"><span class="repair-label">${simulated ? 'PROPOSED CHANGE' : 'CURRENT CLAIM'}</span><p>${escapeHtml(simulated ? `${sourceClaim} → ${selected}` : sourceClaim)}</p><button type="button" class="text-button" data-simulate-repair="${escapeHtml(key)}" data-repair-selected="${selectedIndex}">${simulated ? 'Reset preview' : 'Simulate this repair ↗'}</button>${simulated ? `<div class="feedback-actions"><button type="button" class="text-button" data-feedback-action="accepted_repair" data-feedback-key="${escapeHtml(key)}" data-feedback-index="${selectedIndex}" data-feedback-repair="${escapeHtml(selected)}">Accept this repair</button><button type="button" class="text-button" data-feedback-action="marked_intentional" data-feedback-key="${escapeHtml(key)}" data-feedback-index="${selectedIndex}">Mark intentional</button><button type="button" class="text-button" data-feedback-action="dismissed" data-feedback-key="${escapeHtml(key)}" data-feedback-index="${selectedIndex}">Dismiss finding</button></div>` : ''}${feedbackSaved ? '<small class="feedback-saved">Saved locally · no source text recorded</small>' : ''}</div>`;
   repairSimulator.querySelectorAll('[data-repair-option]').forEach((button) => button.addEventListener('click', () => renderRepairSimulator(key, Number(button.dataset.repairOption), simulated)));
   const simulateButton = repairSimulator.querySelector('[data-simulate-repair]');
   simulateButton?.addEventListener('click', () => renderRepairSimulator(key, Number(simulateButton.dataset.repairSelected), !simulated));
+  repairSimulator.querySelectorAll('[data-feedback-action]').forEach((button) => button.addEventListener('click', () => recordReviewFeedback(button.dataset.feedbackKey, button.dataset.feedbackAction, button.dataset.feedbackRepair, Number(button.dataset.feedbackIndex || 0))));
 }
 
 function selectIssue(event) {
@@ -1183,6 +1221,10 @@ function renderCloudFindings(review) {
     number: `AI ${String(index + 1).padStart(2, '0')}`,
     title: finding.title || 'Continuity concern',
     severity: String(finding.severity || 'review').toUpperCase(),
+    findingType: finding.finding_type || 'continuity_finding',
+    findingScore: Number.isFinite(finding.finding_score) ? finding.finding_score : null,
+    scoreBreakdown: finding.score_breakdown || null,
+    impactScope: finding.impact_scope || null,
     summary: `${finding.why || 'The agent found a source-backed concern.'}${finding.confidence ? ` · ${String(finding.confidence).toUpperCase()} confidence` : ''}${Number.isFinite(finding.finding_score) ? ` · ${finding.finding_score}/100 evidence score` : ''}`,
     heading: finding.title || 'Evidence-backed continuity concern.',
     copy: `${finding.why || 'Review this claim against the cited canon evidence.'} ${Number.isFinite(finding.finding_score) ? `CanonCue score: ${finding.finding_score}/100 (${finding.score_rationale || 'weighted evidence review'}).` : ''} ${Array.isArray(finding.downstream_beats) && finding.downstream_beats.length ? `Downstream at risk: ${finding.downstream_beats.join(' · ')}.` : ''} Repair options: ${Array.isArray(finding.repair_options) && finding.repair_options.length ? finding.repair_options.join(' / ') : finding.smallest_repair || 'Review this beat with the story editor.'}`,
@@ -1311,7 +1353,13 @@ function buildStoryMapCsv() {
 }
 
 function buildProjectBundle() {
-  return JSON.stringify({ product: 'CanonCue', exportedAt: new Date().toISOString(), project: projectLedger, findings: issues, storyMap: deriveStoryGraph(storyMemory), privacy: 'Source text is not included after refresh; this bundle contains local ledger, findings, and map metadata.' }, null, 2);
+  return JSON.stringify({ product: 'CanonCue', exportedAt: new Date().toISOString(), project: projectLedger, findings: issues, reviewFeedback, storyMap: deriveStoryGraph(storyMemory), privacy: 'Source text is not included after refresh; this bundle contains local ledger, findings, map metadata, and local review decisions.' }, null, 2);
+}
+
+function buildFeedbackCsv() {
+  const rows = [['Recorded at', 'Project', 'Finding key', 'Finding type', 'Severity', 'Finding score', 'Impact scope', 'Action', 'Repair']];
+  reviewFeedback.forEach((entry) => rows.push([entry.recordedAt, entry.project, entry.finding_key, entry.finding_type, entry.severity, entry.finding_score ?? '', entry.impact_scope ?? '', entry.action, entry.repair ?? '']));
+  return rows.map((row) => row.map((value) => `"${String(value ?? '').replace(/"/g, '""')}"`).join(',')).join('\n') + '\n';
 }
 
 function setExportError(message = '') {
@@ -1325,6 +1373,7 @@ function renderExportList() {
   const base = exportFileName(projectLedger.title || projectTitle.textContent);
   const rows = [
     ['bundle', 'Project bundle', 'JSON archive with ledger, findings, and story-map metadata.', `${base}-project.json`],
+    ['feedback', 'Review feedback', `${reviewFeedback.length} local decisions for future score calibration. No source text included.`, `${base}-review-feedback.csv`],
     ['canon', 'Canon ledger', 'Approved locks, review candidates, sources, and evidence references.', `${base}-canon.md`],
     ['review', 'Continuity review', 'Open findings, severity, downstream path, and repair options.', `${base}-continuity-review.md`],
     ['map', 'Continuity map', 'Scene-by-scene CSV for spreadsheets, notes, or a writers-room handoff.', `${base}-continuity-map.csv`],
@@ -1340,6 +1389,7 @@ function renderExportList() {
 async function runExport(kind) {
   const base = exportFileName(projectLedger.title || projectTitle.textContent);
   if (kind === 'bundle') downloadLocalBlob(`${base}-project.json`, buildProjectBundle(), 'application/json');
+  if (kind === 'feedback') downloadLocalBlob(`${base}-review-feedback.csv`, buildFeedbackCsv(), 'text/csv');
   if (kind === 'canon') downloadLocalBlob(`${base}-canon.md`, buildCanonMarkdown(), 'text/markdown');
   if (kind === 'review') downloadLocalBlob(`${base}-continuity-review.md`, buildContinuityMarkdown(), 'text/markdown');
   if (kind === 'map') downloadLocalBlob(`${base}-continuity-map.csv`, buildStoryMapCsv(), 'text/csv');
@@ -1731,7 +1781,9 @@ storyGraphDetail.addEventListener('click', (event) => {
 clearProject.addEventListener('click', () => {
   if (!window.confirm('Start a new local series? This removes saved source names and locked facts from this browser.')) return;
   localStorage.removeItem(projectStorageKey);
+  localStorage.removeItem(feedbackStorageKey);
   projectLedger = { title: '', sources: [], facts: [] };
+  reviewFeedback = [];
   storyMemory = null;
   currentImportRole = 'canon';
   window.location.reload();
@@ -1740,5 +1792,6 @@ clearProject.addEventListener('click', () => {
 renderImpact(activeKey);
 renderStoryGraph();
 readProjectLedger();
+readReviewFeedback();
 refreshSavedProject();
 renderStoryGraph();
