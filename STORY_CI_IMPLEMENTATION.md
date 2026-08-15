@@ -1,6 +1,6 @@
 # Story CI — implementation handoff
 
-Status: authorized and in progress on `codex/story-ci`.
+Status: complete, merged to `main`, and live on Railway deployment `0b1e453f-071d-4da2-ab7a-34520e6c1dbf` (`SUCCESS`).
 
 ## Product promise
 
@@ -36,9 +36,9 @@ Treat approved canon like tests. Every incoming revision produces a deterministi
 
 ## Deployment and publishing
 
-- Push the focused addition to the existing public CanonCue repository after tests and review.
-- Deploy to the existing `story-is-straight` Railway service and verify terminal `SUCCESS`, `/api/health`, UI copy, and one synthetic Story CI run.
-- Add a portfolio-hosted route later without linking it from the portfolio homepage.
+- Feature PR #1 and documentation PR #2 are merged into the public CanonCue repository.
+- The existing `story-is-straight` Railway service is healthy; `/api/health` remains configured and live browser QA produced a deterministic synthetic `BLOCK` verdict and SHA-256 report hash.
+- The authorized parent task owns the hidden portfolio route; it must not add a homepage link.
 
 ## Boundaries
 
