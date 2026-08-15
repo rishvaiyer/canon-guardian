@@ -78,6 +78,29 @@
               <button class="primary-button" id="story-ci-run" type="button">Run Story CI</button>
             </div>
           </div>
+          <div class="story-ci-explainer">
+            <strong>How to read this</strong>
+            <span>Canon facts prove a break, the revision introduces it, and the gate decides whether it can ship. Drag any node, then select it to see why it matters.</span>
+          </div>
+          <div class="story-ci-lab">
+            <div class="story-ci-map-wrap">
+              <div class="story-ci-map-toolbar">
+                <div class="story-ci-legend" aria-label="Graph legend"><span class="canon">Canon</span><span class="finding">Finding</span><span class="impact">Impact</span><span class="gate">Gate</span></div>
+                <button class="text-button" id="story-ci-reset" type="button">Reset node layout</button>
+              </div>
+              <p class="story-ci-stage" id="story-ci-stage" aria-live="polite">Select a node to understand the release path.</p>
+              <div class="story-ci-map" id="story-ci-map" aria-label="Interactive Story CI evidence graph">
+                <svg class="story-ci-edges" id="story-ci-edges" aria-hidden="true"></svg>
+                <div class="story-ci-nodes" id="story-ci-nodes"></div>
+              </div>
+            </div>
+            <aside class="story-ci-inspector" id="story-ci-inspector" aria-live="polite">
+              <p class="eyebrow">SELECTED NODE</p>
+              <h3>Release gate</h3>
+              <strong>Why it matters</strong>
+              <p>Select any node in the map to see what it means and why it is connected.</p>
+            </aside>
+          </div>
           <div class="story-ci-grid">
             <div class="story-ci-verdict" id="story-ci-verdict" aria-live="polite">
               <span class="story-ci-state">CHECKING</span>
