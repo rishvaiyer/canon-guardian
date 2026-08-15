@@ -3,6 +3,7 @@ import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import { evaluateStoryCI, normalizeStoryCIManifest } from './story-ci.mjs';
+import { clampGraphPosition, createStoryCIGraph, graphRunStages } from './story-ci-graph.mjs';
 
 GlobalWorkerOptions.workerSrc = pdfWorker;
 
@@ -132,6 +133,12 @@ const storyCIRun = document.querySelector('#story-ci-run');
 const storyCIBaseline = document.querySelector('#story-ci-baseline');
 const storyCIDownloadManifest = document.querySelector('#story-ci-download-manifest');
 const storyCIDownloadReport = document.querySelector('#story-ci-download-report');
+const storyCIMap = document.querySelector('#story-ci-map');
+const storyCIEdges = document.querySelector('#story-ci-edges');
+const storyCINodes = document.querySelector('#story-ci-nodes');
+const storyCIInspector = document.querySelector('#story-ci-inspector');
+const storyCIStage = document.querySelector('#story-ci-stage');
+const storyCIReset = document.querySelector('#story-ci-reset');
 let activeKey = 'code';
 let activeGraphNode = 0;
 let activeCharacter = 'ALL';
@@ -155,6 +162,10 @@ let reviewFeedback = [];
 let latestStoryCIManifest = null;
 let latestStoryCIReport = null;
 let storyCIRenderSequence = 0;
+let storyCIGraph = { nodes: [], edges: [] };
+let storyCIPositions = new Map();
+let selectedStoryCINode = 'gate';
+let storyCIRunSequence = 0;
 
 const sceneHeadingPattern = /^(?:INT\.?|EXT\.?|INT\/EXT\.?|I\/E\.?)(?![A-Za-z])/i;
 const speakerPattern = /^[A-Z][A-Z .'-]{1,34}$/;
@@ -282,7 +293,7 @@ function buildStoryCIManifest() {
   const sampleMode = approvedCanon.length === 0 && !storyMemory && !projectLedger.sources.length;
   const sampleCanon = sampleMode ? entries.map(([key, issue]) => ({
     id: `sample-evidence-${key}`,
-    label: issue.nodes?.[0]?.[1] || issue.title,
+    label: issue.nodes?.find((node) => issue.evidence?.includes(node[0]))?.[1] || issue.title,
     type: 'sample_canon',
     evidence: issue.nodes?.[0]?.[2] || issue.evidence || 'Demonstration evidence',
     source: 'Bundled synthetic sample'
@@ -312,6 +323,116 @@ function readStoryCIBaseline() {
   try { return JSON.parse(localStorage.getItem(storyCIBaselineStorageKey) || 'null'); } catch { return null; }
 }
 
+function storyCIPosition(node) {
+  return storyCIPositions.get(node.id) || { x: node.x, y: node.y };
+}
+
+function drawStoryCIEdges(activeNodeIds = new Set()) {
+  if (!storyCIMap || !storyCIEdges) return;
+  const { width, height } = storyCIMap.getBoundingClientRect();
+  if (!width || !height) return;
+  storyCIEdges.setAttribute('viewBox', `0 0 ${width} ${height}`);
+  storyCIEdges.innerHTML = storyCIGraph.edges.map((edge) => {
+    const fromNode = storyCIGraph.nodes.find((node) => node.id === edge.from);
+    const toNode = storyCIGraph.nodes.find((node) => node.id === edge.to);
+    if (!fromNode || !toNode) return '';
+    const from = storyCIPosition(fromNode);
+    const to = storyCIPosition(toNode);
+    const x1 = (from.x / 100) * width;
+    const y1 = (from.y / 100) * height;
+    const x2 = (to.x / 100) * width;
+    const y2 = (to.y / 100) * height;
+    const active = activeNodeIds.has(edge.from) && activeNodeIds.has(edge.to) ? ' is-active' : '';
+    return `<g class="story-ci-edge ${escapeHtml(edge.kind)}${active}"><line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"></line><text x="${(x1 + x2) / 2}" y="${(y1 + y2) / 2 - 5}">${escapeHtml(edge.label)}</text></g>`;
+  }).join('');
+}
+
+function renderStoryCIInspector(nodeId = selectedStoryCINode) {
+  if (!storyCIInspector) return;
+  const node = storyCIGraph.nodes.find((candidate) => candidate.id === nodeId) || storyCIGraph.nodes.find((candidate) => candidate.id === 'gate') || storyCIGraph.nodes[0];
+  if (!node) return;
+  selectedStoryCINode = node.id;
+  const relationships = storyCIGraph.edges.filter((edge) => edge.from === node.id || edge.to === node.id);
+  const reasons = [...new Set(relationships.map((edge) => edge.label))].join(' · ') || 'FINAL DECISION';
+  storyCIInspector.innerHTML = `<p class="eyebrow">${escapeHtml(node.kicker)}</p><h3>${escapeHtml(node.label)}</h3><strong>What it means</strong><p>${escapeHtml(node.summary)}</p><strong>Why it is connected</strong><p>${escapeHtml(node.detail)}</p><span>${escapeHtml(reasons)} · ${relationships.length} relationship${relationships.length === 1 ? '' : 's'}</span>`;
+  storyCINodes?.querySelectorAll('.story-ci-node').forEach((button) => button.classList.toggle('is-selected', button.dataset.nodeId === node.id));
+}
+
+function attachStoryCINodeInteraction(button, node) {
+  button.addEventListener('click', () => renderStoryCIInspector(node.id));
+  button.addEventListener('keydown', (event) => {
+    const movement = { ArrowLeft: [-2, 0], ArrowRight: [2, 0], ArrowUp: [0, -2], ArrowDown: [0, 2] }[event.key];
+    if (!movement) return;
+    event.preventDefault();
+    const position = storyCIPosition(node);
+    storyCIPositions.set(node.id, { x: clampGraphPosition(position.x + movement[0]), y: clampGraphPosition(position.y + movement[1]) });
+    const next = storyCIPosition(node);
+    button.style.left = `${next.x}%`;
+    button.style.top = `${next.y}%`;
+    drawStoryCIEdges();
+  });
+  button.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0 || !storyCIMap) return;
+    button.setPointerCapture(event.pointerId);
+    button.classList.add('is-dragging');
+    const move = (moveEvent) => {
+      const bounds = storyCIMap.getBoundingClientRect();
+      const x = clampGraphPosition(((moveEvent.clientX - bounds.left) / bounds.width) * 100);
+      const y = clampGraphPosition(((moveEvent.clientY - bounds.top) / bounds.height) * 100);
+      storyCIPositions.set(node.id, { x, y });
+      button.style.left = `${x}%`;
+      button.style.top = `${y}%`;
+      drawStoryCIEdges();
+    };
+    const finish = () => {
+      button.classList.remove('is-dragging');
+      button.removeEventListener('pointermove', move);
+      button.removeEventListener('pointerup', finish);
+      button.removeEventListener('pointercancel', finish);
+    };
+    button.addEventListener('pointermove', move);
+    button.addEventListener('pointerup', finish);
+    button.addEventListener('pointercancel', finish);
+  });
+}
+
+function renderStoryCIGraph({ reset = false } = {}) {
+  if (!storyCINodes) return;
+  if (reset) storyCIPositions = new Map();
+  const activeIds = new Set(Array.from(storyCINodes.querySelectorAll('.is-active'), (node) => node.dataset.nodeId));
+  storyCINodes.innerHTML = '';
+  storyCIGraph.nodes.forEach((node) => {
+    const position = storyCIPosition(node);
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `story-ci-node ${node.type}${node.outcome ? ` ${node.outcome.toLowerCase()}` : ''}${activeIds.has(node.id) ? ' is-active' : ''}`;
+    button.dataset.nodeId = node.id;
+    button.style.left = `${position.x}%`;
+    button.style.top = `${position.y}%`;
+    button.setAttribute('aria-label', `${node.kicker}: ${node.label}. Drag with pointer or move with arrow keys.`);
+    button.innerHTML = `<span>${escapeHtml(node.kicker)}</span><b>${escapeHtml(node.label)}</b><small>${escapeHtml(node.summary)}</small>`;
+    attachStoryCINodeInteraction(button, node);
+    storyCINodes.append(button);
+  });
+  renderStoryCIInspector();
+  requestAnimationFrame(() => drawStoryCIEdges(activeIds));
+}
+
+async function playStoryCIGraph() {
+  const sequence = ++storyCIRunSequence;
+  for (const stage of graphRunStages(storyCIGraph)) {
+    if (sequence !== storyCIRunSequence) return;
+    const active = new Set(stage.nodes);
+    storyCIStage.textContent = stage.label;
+    storyCINodes.querySelectorAll('.story-ci-node').forEach((node) => node.classList.toggle('is-active', active.has(node.dataset.nodeId)));
+    drawStoryCIEdges(active);
+    await new Promise((resolve) => setTimeout(resolve, 420));
+  }
+  if (sequence !== storyCIRunSequence) return;
+  storyCIStage.textContent = `${latestStoryCIReport.verdict} · the same manifest always produces the same decision and hash.`;
+  renderStoryCIInspector('gate');
+}
+
 async function renderStoryCI() {
   if (!storyCIVerdict) return;
   const sequence = ++storyCIRenderSequence;
@@ -324,6 +445,8 @@ async function renderStoryCI() {
   storyCIMetrics.innerHTML = [['PASS', report.counts.PASS], ['REVIEW', report.counts.REVIEW], ['BLOCK', report.counts.BLOCK]].map(([label, value]) => `<div><span>${label}</span><strong>${value}</strong></div>`).join('');
   storyCIChecks.innerHTML = report.checks.length ? report.checks.map((check) => `<article data-outcome="${check.outcome}"><span>${escapeHtml(check.outcome)}</span><div><b>${escapeHtml(check.title)}</b><small>${escapeHtml(check.reason)}${check.downstream.length ? ` · ${check.downstream.length} downstream beat${check.downstream.length === 1 ? '' : 's'}` : ''}</small></div></article>`).join('') : '<article data-outcome="PASS"><span>PASS</span><div><b>No open continuity findings</b><small>The deterministic gate found nothing to block.</small></div></article>';
   storyCIHash.textContent = `SHA-256 ${report.hash.slice(0, 20)}… · ${report.project} / ${report.revision}`;
+  storyCIGraph = createStoryCIGraph(latestStoryCIManifest, report);
+  renderStoryCIGraph();
 }
 
 function downloadStoryCI(kind) {
@@ -1889,9 +2012,16 @@ storyCIRun?.addEventListener('click', async () => {
   storyCIRun.disabled = true;
   storyCIRun.textContent = 'Running…';
   await renderStoryCI();
+  await playStoryCIGraph();
   storyCIRun.disabled = false;
   storyCIRun.textContent = 'Run Story CI';
 });
+storyCIReset?.addEventListener('click', () => {
+  storyCIRunSequence += 1;
+  storyCIStage.textContent = 'Layout reset. Select a node to understand the release path.';
+  renderStoryCIGraph({ reset: true });
+});
+window.addEventListener('resize', () => drawStoryCIEdges());
 storyCIBaseline?.addEventListener('click', () => {
   if (!latestStoryCIReport) return;
   localStorage.setItem(storyCIBaselineStorageKey, JSON.stringify(latestStoryCIReport));
