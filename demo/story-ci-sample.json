@@ -1,0 +1,27 @@
+{
+  "project": "The Last Loop",
+  "revision": "Draft 4",
+  "policy": {
+    "blockAt": "HIGH",
+    "requireEvidence": true,
+    "maxOpenReview": 2
+  },
+  "canon": [
+    {
+      "id": "jonah-death",
+      "label": "Jonah dies on page",
+      "type": "state",
+      "evidence": "Scene 7, page 3"
+    }
+  ],
+  "findings": [
+    {
+      "id": "jonah-returns",
+      "title": "Jonah enters the station alive",
+      "severity": "CRITICAL",
+      "status": "open",
+      "evidenceIds": ["jonah-death"],
+      "downstream": ["Scene 28 finale"]
+    }
+  ]
+}

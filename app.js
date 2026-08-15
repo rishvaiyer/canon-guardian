@@ -2,6 +2,7 @@ import mammoth from 'mammoth';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
+import { evaluateStoryCI, normalizeStoryCIManifest } from './story-ci.mjs';
 
 GlobalWorkerOptions.workerSrc = pdfWorker;
 
@@ -123,6 +124,14 @@ const exportDialog = document.querySelector('#export-dialog');
 const exportList = document.querySelector('#export-list');
 const exportError = document.querySelector('#export-error');
 const downloadAllOutputs = document.querySelector('#download-all-outputs');
+const storyCIVerdict = document.querySelector('#story-ci-verdict');
+const storyCIMetrics = document.querySelector('#story-ci-metrics');
+const storyCIChecks = document.querySelector('#story-ci-checks');
+const storyCIHash = document.querySelector('#story-ci-hash');
+const storyCIRun = document.querySelector('#story-ci-run');
+const storyCIBaseline = document.querySelector('#story-ci-baseline');
+const storyCIDownloadManifest = document.querySelector('#story-ci-download-manifest');
+const storyCIDownloadReport = document.querySelector('#story-ci-download-report');
 let activeKey = 'code';
 let activeGraphNode = 0;
 let activeCharacter = 'ALL';
@@ -140,8 +149,12 @@ let currentAnnotations = [];
 let importedFiles = [];
 const projectStorageKey = 'story-is-straight-project-v3';
 const feedbackStorageKey = 'canoncue-review-feedback-v1';
+const storyCIBaselineStorageKey = 'canoncue-story-ci-baseline-v1';
 let projectLedger = { title: '', sources: [], facts: [] };
 let reviewFeedback = [];
+let latestStoryCIManifest = null;
+let latestStoryCIReport = null;
+let storyCIRenderSequence = 0;
 
 const sceneHeadingPattern = /^(?:INT\.?|EXT\.?|INT\/EXT\.?|I\/E\.?)(?![A-Za-z])/i;
 const speakerPattern = /^[A-Z][A-Z .'-]{1,34}$/;
@@ -239,6 +252,85 @@ function recordReviewFeedback(key, action, repairLabel = '', selectedIndex = 0) 
   status.textContent = `${actionLabel}. Feedback stays in this browser for future score calibration.`;
   statusMeta.textContent = `${reviewFeedback.length} local review decision${reviewFeedback.length === 1 ? '' : 's'}`;
   renderRepairSimulator(key, selectedIndex, true, true);
+  renderStoryCI();
+}
+
+function latestFindingDecision(key) {
+  return [...reviewFeedback].reverse().find((entry) => entry.finding_key === key)?.action || 'open';
+}
+
+function findingKey(finding, index) {
+  const identity = [finding.finding_type, finding.title, ...(finding.evidence_indices || [])]
+    .filter((value) => value !== undefined && value !== null)
+    .join('-')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 72);
+  return `cloud-${identity || index + 1}`;
+}
+
+function buildStoryCIManifest() {
+  const entries = Object.entries(issues || {});
+  const approvedCanon = projectLedger.facts.filter((fact) => fact.locked).map((fact, index) => ({
+    id: fact.id || `approved-${index + 1}`,
+    label: fact.label,
+    type: fact.type,
+    evidence: sourceRef(fact.line),
+    source: fact.line?.file || ''
+  }));
+  const sampleMode = approvedCanon.length === 0 && !storyMemory && !projectLedger.sources.length;
+  const sampleCanon = sampleMode ? entries.map(([key, issue]) => ({
+    id: `sample-evidence-${key}`,
+    label: issue.nodes?.[0]?.[1] || issue.title,
+    type: 'sample_canon',
+    evidence: issue.nodes?.[0]?.[2] || issue.evidence || 'Demonstration evidence',
+    source: 'Bundled synthetic sample'
+  })) : [];
+  return normalizeStoryCIManifest({
+    project: projectLedger.title || projectTitle.textContent || 'CanonCue sample',
+    revision: projectLedger.sources.filter((source) => source.role === 'revision').sort(sourceSort).at(-1)?.label || projectMeta.textContent || 'Working revision',
+    policy: { blockAt: 'HIGH', requireEvidence: true, maxOpenReview: 2 },
+    canon: [...approvedCanon, ...sampleCanon],
+    findings: entries.map(([key, issue]) => ({
+      id: key,
+      title: issue.title,
+      severity: issue.severity,
+      status: latestFindingDecision(key),
+      evidenceIds: issue.evidenceIds?.length
+        ? issue.evidenceIds
+        : sampleMode
+          ? [`sample-evidence-${key}`]
+          : approvedCanon.filter((entry) => entry.evidence === issue.nodes?.[0]?.[2]).map((entry) => entry.id),
+      downstream: (issue.nodes || []).slice(1).map((node) => node[1]),
+      summary: issue.summary
+    }))
+  });
+}
+
+function readStoryCIBaseline() {
+  try { return JSON.parse(localStorage.getItem(storyCIBaselineStorageKey) || 'null'); } catch { return null; }
+}
+
+async function renderStoryCI() {
+  if (!storyCIVerdict) return;
+  const sequence = ++storyCIRenderSequence;
+  latestStoryCIManifest = buildStoryCIManifest();
+  const report = await evaluateStoryCI(latestStoryCIManifest, readStoryCIBaseline());
+  if (sequence !== storyCIRenderSequence) return;
+  latestStoryCIReport = report;
+  storyCIVerdict.dataset.verdict = report.verdict;
+  storyCIVerdict.innerHTML = `<span class="story-ci-state">${escapeHtml(report.verdict)}</span><strong>${report.verdict === 'BLOCK' ? 'Revision cannot be promoted.' : report.verdict === 'REVIEW' ? 'Editorial review is required.' : 'Revision is ready to promote.'}</strong><small>${report.comparison ? `${report.comparison.previousVerdict} baseline · ${report.comparison.blockedDelta >= 0 ? '+' : ''}${report.comparison.blockedDelta} blocked` : 'No baseline promoted yet.'}</small>`;
+  storyCIMetrics.innerHTML = [['PASS', report.counts.PASS], ['REVIEW', report.counts.REVIEW], ['BLOCK', report.counts.BLOCK]].map(([label, value]) => `<div><span>${label}</span><strong>${value}</strong></div>`).join('');
+  storyCIChecks.innerHTML = report.checks.length ? report.checks.map((check) => `<article data-outcome="${check.outcome}"><span>${escapeHtml(check.outcome)}</span><div><b>${escapeHtml(check.title)}</b><small>${escapeHtml(check.reason)}${check.downstream.length ? ` · ${check.downstream.length} downstream beat${check.downstream.length === 1 ? '' : 's'}` : ''}</small></div></article>`).join('') : '<article data-outcome="PASS"><span>PASS</span><div><b>No open continuity findings</b><small>The deterministic gate found nothing to block.</small></div></article>';
+  storyCIHash.textContent = `SHA-256 ${report.hash.slice(0, 20)}… · ${report.project} / ${report.revision}`;
+}
+
+function downloadStoryCI(kind) {
+  if (!latestStoryCIManifest || !latestStoryCIReport) return;
+  const base = exportFileName(projectLedger.title || projectTitle.textContent);
+  const data = kind === 'manifest' ? latestStoryCIManifest : latestStoryCIReport;
+  downloadLocalBlob(`${base}-story-ci-${kind}.json`, JSON.stringify(data, null, 2), 'application/json');
 }
 
 function mergeFactsIntoLedger(facts, seriesMeta = null) {
@@ -1217,7 +1309,8 @@ function renderCloudFindings(review) {
   const allFindings = Array.isArray(review?.findings) ? review.findings : [];
   const findings = allFindings.slice(0, 12);
   if (!findings.length) return;
-  issues = Object.fromEntries(findings.map((finding, index) => [`cloud-${index}`, {
+  const approvedCanon = projectLedger.facts.filter((fact) => fact.locked);
+  issues = Object.fromEntries(findings.map((finding, index) => [findingKey(finding, index), {
     number: `AI ${String(index + 1).padStart(2, '0')}`,
     title: finding.title || 'Continuity concern',
     severity: String(finding.severity || 'review').toUpperCase(),
@@ -1230,6 +1323,7 @@ function renderCloudFindings(review) {
     copy: `${finding.why || 'Review this claim against the cited canon evidence.'} ${Number.isFinite(finding.finding_score) ? `CanonCue score: ${finding.finding_score}/100 (${finding.score_rationale || 'weighted evidence review'}).` : ''} ${Array.isArray(finding.downstream_beats) && finding.downstream_beats.length ? `Downstream at risk: ${finding.downstream_beats.join(' · ')}.` : ''} Repair options: ${Array.isArray(finding.repair_options) && finding.repair_options.length ? finding.repair_options.join(' / ') : finding.smallest_repair || 'Review this beat with the story editor.'}`,
     repairOptions: Array.isArray(finding.repair_plan) && finding.repair_plan.length ? finding.repair_plan.map((option) => `${option.label} · score ${option.score}/100`) : finding.repair_options,
     smallestRepair: finding.smallest_repair,
+    evidenceIds: (finding.evidence_indices || []).map((evidenceIndex) => approvedCanon[evidenceIndex]?.id).filter(Boolean),
     evidence: `GEMINI EVIDENCE · ${finding.evidence || 'Retrieved canon evidence'}`,
     nodes: [
       ['CANON EVIDENCE', finding.evidence || 'Approved source', 'Retrieved from ClickHouse'],
@@ -1237,10 +1331,11 @@ function renderCloudFindings(review) {
       ['REPAIR PLAN', finding.smallest_repair || (Array.isArray(finding.repair_options) ? finding.repair_options[0] : null) || 'Editor review required', `${finding.finding_type || 'continuity'} · ${Array.isArray(finding.downstream_beats) ? finding.downstream_beats.length : 0} downstream beat${Array.isArray(finding.downstream_beats) && finding.downstream_beats.length === 1 ? '' : 's'} at risk`]
     ]
   }]));
-  activeKey = 'cloud-0';
+  activeKey = Object.keys(issues)[0];
   renderImpact(activeKey);
   const metrics = review?.metrics || {};
   response.innerHTML = `<span class="response-kicker">CONTINUITY CREW / GEMINI + CLICKHOUSE</span><p><b>${escapeHtml(review.summary || `${allFindings.length} evidence-backed ${allFindings.length === 1 ? 'concern' : 'concerns'} found.`)}</b> Showing ${findings.length} of ${allFindings.length} findings. Average evidence score: ${Number.isFinite(metrics.score_average) ? `${metrics.score_average}/100` : 'not available'}. The crew separated canon evidence, break detection, downstream risk, and repair options for your approval.</p>`;
+  renderStoryCI();
 }
 
 async function runCloudReview() {
@@ -1782,6 +1877,7 @@ clearProject.addEventListener('click', () => {
   if (!window.confirm('Start a new local series? This removes saved source names and locked facts from this browser.')) return;
   localStorage.removeItem(projectStorageKey);
   localStorage.removeItem(feedbackStorageKey);
+  localStorage.removeItem(storyCIBaselineStorageKey);
   projectLedger = { title: '', sources: [], facts: [] };
   reviewFeedback = [];
   storyMemory = null;
@@ -1789,9 +1885,25 @@ clearProject.addEventListener('click', () => {
   window.location.reload();
 });
 
+storyCIRun?.addEventListener('click', async () => {
+  storyCIRun.disabled = true;
+  storyCIRun.textContent = 'Running…';
+  await renderStoryCI();
+  storyCIRun.disabled = false;
+  storyCIRun.textContent = 'Run Story CI';
+});
+storyCIBaseline?.addEventListener('click', () => {
+  if (!latestStoryCIReport) return;
+  localStorage.setItem(storyCIBaselineStorageKey, JSON.stringify(latestStoryCIReport));
+  renderStoryCI();
+});
+storyCIDownloadManifest?.addEventListener('click', () => downloadStoryCI('manifest'));
+storyCIDownloadReport?.addEventListener('click', () => downloadStoryCI('report'));
+
 renderImpact(activeKey);
 renderStoryGraph();
 readProjectLedger();
 readReviewFeedback();
 refreshSavedProject();
 renderStoryGraph();
+renderStoryCI();

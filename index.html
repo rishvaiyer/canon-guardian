@@ -24,6 +24,7 @@
           <a class="nav-item" href="#downstream"><span>03</span> Impact map</a>
           <a class="nav-item" href="#story-map"><span>04</span> Continuity map</a>
           <a class="nav-item" href="#series"><span>05</span> Series timeline</a>
+          <a class="nav-item" href="#story-ci"><span>06</span> Story CI</a>
         </nav>
 
         <div class="project-card">
@@ -64,6 +65,32 @@
         </section>
         <section class="workflow-rail" id="workflow-rail" aria-label="Story workflow"></section>
         <section class="review-inbox" id="review-inbox" aria-live="polite" aria-label="Review inbox"></section>
+
+        <section class="story-ci" id="story-ci" aria-labelledby="story-ci-title">
+          <div class="story-ci-head">
+            <div>
+              <p class="eyebrow">REVISION RELEASE GATE</p>
+              <h2 id="story-ci-title">Treat canon like <em>tests.</em></h2>
+              <p>Story CI turns approved evidence and reviewed continuity findings into a deterministic release verdict. The model can propose findings; it cannot overrule the gate.</p>
+            </div>
+            <div class="story-ci-actions">
+              <button class="secondary-button" id="story-ci-baseline" type="button">Promote baseline</button>
+              <button class="primary-button" id="story-ci-run" type="button">Run Story CI</button>
+            </div>
+          </div>
+          <div class="story-ci-grid">
+            <div class="story-ci-verdict" id="story-ci-verdict" aria-live="polite">
+              <span class="story-ci-state">CHECKING</span>
+              <strong>Evaluating the current revision…</strong>
+            </div>
+            <div class="story-ci-metrics" id="story-ci-metrics" aria-live="polite"></div>
+            <div class="story-ci-checks" id="story-ci-checks" aria-live="polite"></div>
+          </div>
+          <div class="story-ci-footer">
+            <span id="story-ci-hash">Preparing deterministic manifest hash…</span>
+            <div><button class="text-button" id="story-ci-download-manifest" type="button">Download manifest</button><button class="text-button" id="story-ci-download-report" type="button">Download report</button></div>
+          </div>
+        </section>
 
         <section class="series-timeline" id="series">
           <div class="impact-head">
