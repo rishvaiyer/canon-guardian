@@ -11,7 +11,7 @@ CanonCue is an evidence-first continuity workspace for authors, writers’ rooms
 - **App:** [app-production-517f.up.railway.app](https://app-production-517f.up.railway.app/)
 - **Repository:** [github.com/rishvaiyer/canon-guardian](https://github.com/rishvaiyer/canon-guardian)
 - **Synthetic walkthrough:** [`demo/episode-01-canon.txt`](demo/episode-01-canon.txt) → [`demo/episode-02-revision.txt`](demo/episode-02-revision.txt)
-- **Current live release:** `bc2272d` · Railway deployment `6f35b464-7650-47a8-8da1-7dea220ea7a5` (`SUCCESS`)
+- **Current live release:** `47bf546` · Railway deployment `0b1e453f-071d-4da2-ab7a-34520e6c1dbf` (`SUCCESS`)
 
 The demo files are original synthetic fiction created for this repository. They are safe to use in a public walkthrough.
 
@@ -25,7 +25,8 @@ The demo files are original synthetic fiction created for this repository. They 
 6. Open the **Review Inbox** and select a finding.
 7. Inspect the source-backed evidence, downstream impact, and **Repair Simulator**.
 8. Select a scene in the **Continuity Map** to see its nearby `NEXT` and `THREAD` connections.
-9. Open **Download outputs** to export the ledger, review, map, project bundle, or source files.
+9. Run **Story CI** to generate an evidence-gated release verdict and deterministic manifest hash.
+10. Open **Download outputs** to export the ledger, review, map, project bundle, or source files.
 
 The synthetic revision intentionally breaks four established states: Jonah’s death, Maya’s wrist injury, the phone’s dead state, and the timing of the locker-code reveal.
 
@@ -78,6 +79,23 @@ The result is an explainable editorial aid, not a claim that the score is object
 - `NEXT` edges show story order; `THREAD` edges show consecutive shared-character continuity.
 - The selected scene explains **WHY CONNECTED** and exposes evidence when available.
 - Full-map mode remains available for longer scripts.
+
+### Story CI release gate
+
+- Converts approved canon locks and current continuity findings into a portable `canoncue.story-ci/v1` manifest.
+- Blocks unresolved high/critical breaks and any finding with missing or unknown evidence IDs.
+- Keeps the release decision deterministic: model output can propose a finding, but it cannot override policy.
+- Records explicit editorial decisions without silently deleting the original finding.
+- Compares the current report with a promoted browser-local baseline and exports both manifest and report JSON.
+- Ships a zero-secret Node CLI and GitHub Actions workflow for the same policy evaluator used in the browser.
+
+Run an exported or synthetic manifest from CI:
+
+```bash
+npm run story-ci -- demo/story-ci-sample.json
+```
+
+The command exits `1` for a blocked revision, `0` for pass/review, and `2` for invalid input or runtime failure.
 
 ### Portable outputs
 
@@ -163,6 +181,7 @@ The UI fails closed when the cloud service, prerequisites, or consent are missin
 npm run check
 npm run check:server
 npm run test:analysis
+npm run test:story-ci
 npm run build
 npm audit --omit=dev --audit-level=high
 git diff --check
