@@ -12,6 +12,7 @@
     "check:server": "node --check agent-server.mjs",
     "test:analysis": "node --test continuity-analysis.test.mjs",
     "test:story-ci": "node --test story-ci.test.mjs story-ci-graph.test.mjs",
+    "test:cloud-gate": "npm run build && node --test cloud-action-gate.test.mjs",
     "story-ci": "node scripts/story-ci-cli.mjs"
   },
   "dependencies": {

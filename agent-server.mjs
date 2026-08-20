@@ -16,6 +16,16 @@ const reviewLimit = Number(process.env.CLOUD_REVIEW_RATE_LIMIT || 5);
 const distDirectory = join(process.cwd(), 'dist');
 const clickhouseDatabase = (process.env.CLICKHOUSE_DATABASE || 'story_is_straight').replace(/[^A-Za-z0-9_]/g, '');
 const reviewBuckets = new Map();
+const cloudActionRoutes = new Set([
+  '/api/agent/review',
+  '/api/agent/canon-candidates',
+  '/api/agent/ask-canon'
+]);
+const cloudActionsDisabledMessage = 'Cloud actions are disabled on this public showcase. Use the browser-local continuity check and Story CI.';
+
+function cloudActionsEnabled() {
+  return String(process.env.STORY_CLOUD_ACTIONS_ENABLED || '').trim().toLowerCase() === 'true';
+}
 
 function configured() {
   return Boolean(process.env.GOOGLE_CLOUD_PROJECT && process.env.CLICKHOUSE_HOST && Object.hasOwn(process.env, 'CLICKHOUSE_PASSWORD'));
@@ -236,9 +246,36 @@ async function askCanonWithCloud(body) {
 }
 
 const server = createServer(async (request, response) => {
+  const requestPath = request.url?.split('?')[0] || '/';
+  if (request.method === 'POST' && cloudActionRoutes.has(requestPath) && !cloudActionsEnabled()) {
+    return json(response, 503, { error: cloudActionsDisabledMessage, mode: 'browser-local' });
+  }
+
   if (request.url === '/api/health') {
+    if (!cloudActionsEnabled()) {
+      return json(response, 200, {
+        configured: false,
+        cloudActionsEnabled: false,
+        cloudActionsAvailable: false,
+        mode: 'browser-local',
+        provider: 'Browser-local Story CI',
+        clickhouseMcp: false,
+        message: cloudActionsDisabledMessage
+      });
+    }
     const mcpReady = await clickHouseMcpHealthy();
-    return json(response, 200, { configured: configured() && mcpReady, provider: 'Gemini Enterprise + ClickHouse MCP', clickhouseMcp: mcpReady });
+    const cloudActionsAvailable = configured() && mcpReady;
+    return json(response, 200, {
+      configured: cloudActionsAvailable,
+      cloudActionsEnabled: true,
+      cloudActionsAvailable,
+      mode: cloudActionsAvailable ? 'cloud-enabled' : 'browser-local',
+      provider: cloudActionsAvailable ? 'Gemini Enterprise + ClickHouse MCP' : 'Browser-local Story CI',
+      clickhouseMcp: mcpReady,
+      message: cloudActionsAvailable
+        ? 'Cloud actions are available in this protected deployment.'
+        : 'Cloud actions were enabled, but the provider boundary is unavailable. Browser-local Story CI remains available.'
+    });
   }
   if (request.url === '/api/agent/review' && request.method === 'POST') {
     if (!(configured() && await clickHouseMcpHealthy())) return json(response, 503, { error: 'Cloud review is not ready. Set Google Cloud/ClickHouse variables and start the local ClickHouse MCP sidecar.' });

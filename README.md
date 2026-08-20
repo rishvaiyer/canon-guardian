@@ -113,6 +113,8 @@ The command exits `1` for a blocked revision, `0` for pass/review, and `2` for i
 
 The local checker is the default and remains available offline. The cloud layer is explicit and consent-gated.
 
+Public deployments fail closed by default. The three cloud POST routes return `503` unless `STORY_CLOUD_ACTIONS_ENABLED=true`. That flag is not authentication or tenant isolation, so do not enable it on a public deployment. Keep the public showcase browser-local until a protected deployment supplies those controls.
+
 | Component | Responsibility |
 | --- | --- |
 | **Gemini Enterprise** | Proposes canon candidates, answers grounded canon questions, and reasons over the incoming draft |
@@ -149,6 +151,8 @@ cp .env.example .env
 npm run serve
 ```
 
+Set `STORY_CLOUD_ACTIONS_ENABLED=true` only for a protected local or authenticated deployment. Without it, `/api/health` truthfully reports browser-local mode and the cloud routes remain unavailable.
+
 When using `npm start`, Vite proxies `/api` requests to `http://localhost:8787`. The production-style combined server is:
 
 ```bash
@@ -182,6 +186,7 @@ npm run check
 npm run check:server
 npm run test:analysis
 npm run test:story-ci
+npm run test:cloud-gate
 npm run build
 npm audit --omit=dev --audit-level=high
 git diff --check
@@ -210,6 +215,7 @@ Railway health check: `/api/health`.
 - Local imports stay in the browser by default.
 - Full source text is intentionally not persisted in `localStorage`.
 - Cloud review is opt-in per action and rate-limited server-side.
+- Public cloud actions are disabled by default and require an explicit protected-deployment opt-in.
 - Locked evidence is durable in ClickHouse only when the cloud workflow is explicitly used.
 - Gemini proposes; it does not lock facts or rewrite drafts automatically.
 - The demo uses synthetic fiction, not a real screenplay.
